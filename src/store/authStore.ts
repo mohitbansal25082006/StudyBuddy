@@ -1,3 +1,4 @@
+// F:\StudyBuddy\src\store\authStore.ts
 // ============================================
 // ZUSTAND AUTH STORE
 // Global state for user authentication

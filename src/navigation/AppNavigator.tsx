@@ -1,103 +1,146 @@
+// F:\StudyBuddy\src\navigation\AppNavigator.tsx
 // ============================================
 // APP NAVIGATOR
 // Main navigation after authentication
 // ============================================
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { View, Text } from 'react-native';
+
+// Screens
 import { ProfileSetupScreen } from '../screens/profile/ProfileSetupScreen';
 import { ProfileEditScreen } from '../screens/profile/ProfileEditScreen';
+import { HomeScreen } from '../screens/home/HomeScreen';
+import { StudyPlanScreen } from '../screens/studyPlan/StudyPlanScreen';
+import { StudyPlanDetailScreen } from '../screens/studyPlan/StudyPlanDetailScreen';
+import { FlashcardsScreen } from '../screens/flashcards/FlashcardsScreen';
+import { FlashcardReviewScreen } from '../screens/flashcards/FlashcardReviewScreen';
+import { CalendarScreen } from '../screens/calendar/CalendarScreen';
+import { AddEventScreen } from '../screens/calendar/AddEventScreen';
+import { EditEventScreen } from '../screens/calendar/EditEventScreen';
+import { ProgressScreen } from '../screens/progress/ProgressScreen';
+import { SubjectsScreen } from '../screens/subjects/SubjectsScreen';
+
+// Types & Store
 import { AppStackParamList } from '../types';
-import { View, Text, TouchableOpacity } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 
-const Stack = createStackNavigator<AppStackParamList>();
+// ============================================
+// CONSTANTS & TYPES
+// ============================================
 
-// Main Screen Component
-const MainScreen = ({ navigation }: any) => {
-  const { profile } = useAuthStore();
+const Stack = createStackNavigator<AppStackParamList>();
+const Tab = createBottomTabNavigator();
+
+// ============================================
+// TAB ICON COMPONENT
+// ============================================
+
+interface TabIconProps {
+  name: string;
+  focused: boolean;
+}
+
+const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
+  const getIcon = (tabName: string): string => {
+    const iconMap: { [key: string]: string } = {
+      'Home': '🏠',
+      'StudyPlan': '📚',
+      'Flashcards': '🗂️',
+      'Calendar': '📅',
+      'Progress': '📊',
+      'Subjects': '📖',
+    };
+    
+    return iconMap[tabName] || '📱';
+  };
+
+  const formatTabName = (tabName: string): string => {
+    return tabName.replace(/([A-Z])/g, ' $1').trim();
+  };
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF', paddingHorizontal: 40 }}>
-      {/* Success Message */}
-      <View style={{
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: '#10B981',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 24,
+    <View style={{ 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    }}>
+      <Text style={{ 
+        fontSize: 24, 
+        marginBottom: 4 
       }}>
-        <Text style={{ fontSize: 48 }}>✓</Text>
-      </View>
-
-      <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#111827', textAlign: 'center', marginBottom: 12 }}>
-        Welcome to StudyBuddy!
+        {getIcon(name)}
       </Text>
-
-      <Text style={{ fontSize: 18, fontWeight: '600', color: '#6366F1', marginBottom: 16 }}>
-        {profile?.full_name || 'User'}
-      </Text>
-
-      <Text style={{ fontSize: 16, color: '#6B7280', textAlign: 'center', lineHeight: 24, marginBottom: 32 }}>
-        🎉 Part 1 Complete! You've successfully set up authentication and your profile. Main features are coming in Part 2!
-      </Text>
-
-      {/* Profile Info Card */}
-      <View style={{
-        width: '100%',
-        backgroundColor: '#F9FAFB',
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
+      
+      <Text style={{ 
+        fontSize: 12, 
+        color: focused ? '#6366F1' : '#9CA3AF',
+        fontWeight: focused ? '600' : '400'
       }}>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#6B7280', marginBottom: 12 }}>
-          YOUR PROFILE
-        </Text>
-        <View style={{ marginBottom: 8 }}>
-          <Text style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 4 }}>Learning Style</Text>
-          <Text style={{ fontSize: 14, color: '#111827', fontWeight: '500' }}>
-            {profile?.learning_style ? profile.learning_style.charAt(0).toUpperCase() + profile.learning_style.slice(1) : 'Not set'}
-          </Text>
-        </View>
-        <View style={{ marginBottom: 8 }}>
-          <Text style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 4 }}>Grade Level</Text>
-          <Text style={{ fontSize: 14, color: '#111827', fontWeight: '500' }}>
-            {profile?.grade_level || 'Not set'}
-          </Text>
-        </View>
-        <View>
-          <Text style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 4 }}>Subjects</Text>
-          <Text style={{ fontSize: 14, color: '#111827', fontWeight: '500' }}>
-            {profile?.subjects && profile.subjects.length > 0 ? profile.subjects.join(', ') : 'None selected'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Edit Profile Button */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('ProfileEdit')}
-        style={{
-          backgroundColor: '#6366F1',
-          paddingVertical: 16,
-          paddingHorizontal: 32,
-          borderRadius: 12,
-          width: '100%',
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
-          Edit Profile
-        </Text>
-      </TouchableOpacity>
+        {formatTabName(name)}
+      </Text>
     </View>
   );
 };
 
-export const AppNavigator = () => {
+// ============================================
+// TAB NAVIGATOR
+// ============================================
+
+const TabNavigator: React.FC = () => {
+  const tabScreenOptions = ({ route }: any) => ({
+    tabBarIcon: ({ focused }: { focused: boolean }) => (
+      <TabIcon name={route.name} focused={focused} />
+    ),
+    tabBarActiveTintColor: '#6366F1',
+    tabBarInactiveTintColor: '#9CA3AF',
+    tabBarStyle: {
+      backgroundColor: '#FFFFFF',
+      borderTopWidth: 1,
+      borderTopColor: '#E5E7EB',
+      height: 80,
+      paddingBottom: 10,
+      paddingTop: 10,
+    },
+    headerShown: false,
+  });
+
+  return (
+    <Tab.Navigator screenOptions={tabScreenOptions}>
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen} 
+      />
+      <Tab.Screen 
+        name="Subjects" 
+        component={SubjectsScreen} 
+      />
+      <Tab.Screen 
+        name="StudyPlan" 
+        component={StudyPlanScreen} 
+      />
+      <Tab.Screen 
+        name="Flashcards" 
+        component={FlashcardsScreen} 
+      />
+      <Tab.Screen 
+        name="Calendar" 
+        component={CalendarScreen} 
+      />
+      <Tab.Screen 
+        name="Progress" 
+        component={ProgressScreen} 
+      />
+    </Tab.Navigator>
+  );
+};
+
+// ============================================
+// MAIN APP NAVIGATOR
+// ============================================
+
+export const AppNavigator: React.FC = () => {
   const { profile } = useAuthStore();
   
   // Determine initial route based on profile completion
@@ -107,18 +150,54 @@ export const AppNavigator = () => {
   console.log('AppNavigator - Profile complete:', isProfileComplete);
   console.log('AppNavigator - Initial route:', initialRouteName);
 
+  const stackScreenOptions = {
+    headerShown: false,
+    gestureEnabled: true,
+    cardStyle: { backgroundColor: '#FFFFFF' },
+  };
+
   return (
     <Stack.Navigator
       initialRouteName={initialRouteName}
-      screenOptions={{
-        headerShown: false,
-        gestureEnabled: true,
-        cardStyle: { backgroundColor: '#FFFFFF' },
-      }}
+      screenOptions={stackScreenOptions}
     >
-      <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-      <Stack.Screen name="Main" component={MainScreen} />
-      <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+      {/* Profile Screens */}
+      <Stack.Screen 
+        name="ProfileSetup" 
+        component={ProfileSetupScreen} 
+      />
+      <Stack.Screen 
+        name="ProfileEdit" 
+        component={ProfileEditScreen} 
+      />
+      
+      {/* Main Tab Navigator */}
+      <Stack.Screen 
+        name="Main" 
+        component={TabNavigator} 
+      />
+      
+      {/* Study Plan Screens */}
+      <Stack.Screen 
+        name="StudyPlanDetail" 
+        component={StudyPlanDetailScreen} 
+      />
+      
+      {/* Flashcard Screens */}
+      <Stack.Screen 
+        name="FlashcardReview" 
+        component={FlashcardReviewScreen} 
+      />
+      
+      {/* Calendar Screens */}
+      <Stack.Screen 
+        name="AddEvent" 
+        component={AddEventScreen} 
+      />
+      <Stack.Screen 
+        name="EditEvent" 
+        component={EditEventScreen} 
+      />
     </Stack.Navigator>
   );
 };

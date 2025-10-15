@@ -1,3 +1,4 @@
+// F:\StudyBuddy\src\services\supabase.ts
 // ============================================
 // SUPABASE CLIENT CONFIGURATION
 // This connects our app to Supabase
@@ -154,4 +155,356 @@ export const uploadAvatar = async (userId: string, uri: string) => {
     console.error('Error uploading avatar:', error);
     throw error;
   }
+};
+
+// ============================================
+// STUDY PLAN HELPER FUNCTIONS
+// ============================================
+
+// Get all study plans for a user
+export const getStudyPlans = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('study_plans')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+// Get a specific study plan
+export const getStudyPlan = async (planId: string) => {
+  const { data, error } = await supabase
+    .from('study_plans')
+    .select('*')
+    .eq('id', planId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a new study plan
+export const createStudyPlan = async (plan: any) => {
+  const { data, error } = await supabase
+    .from('study_plans')
+    .insert({
+      ...plan,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a study plan
+export const updateStudyPlan = async (planId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('study_plans')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete a study plan
+export const deleteStudyPlan = async (planId: string) => {
+  const { error } = await supabase
+    .from('study_plans')
+    .delete()
+    .eq('id', planId);
+
+  if (error) throw error;
+  return true;
+};
+
+// ============================================
+// FLASHCARD HELPER FUNCTIONS
+// ============================================
+
+// Get all flashcards for a user
+export const getFlashcards = async (userId: string, subject?: string) => {
+  let query = supabase
+    .from('flashcards')
+    .select('*')
+    .eq('user_id', userId)
+    .order('next_review', { ascending: true });
+
+  if (subject) {
+    query = query.eq('subject', subject);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+};
+
+// Get flashcards due for review
+export const getFlashcardsForReview = async (userId: string, subject?: string) => {
+  const now = new Date().toISOString();
+  let query = supabase
+    .from('flashcards')
+    .select('*')
+    .eq('user_id', userId)
+    .lte('next_review', now)
+    .order('next_review', { ascending: true });
+
+  if (subject) {
+    query = query.eq('subject', subject);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a new flashcard
+export const createFlashcard = async (flashcard: any) => {
+  const { data, error } = await supabase
+    .from('flashcards')
+    .insert({
+      ...flashcard,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a flashcard
+export const updateFlashcard = async (cardId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('flashcards')
+    .update(updates)
+    .eq('id', cardId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete a flashcard
+export const deleteFlashcard = async (cardId: string) => {
+  const { error } = await supabase
+    .from('flashcards')
+    .delete()
+    .eq('id', cardId);
+
+  if (error) throw error;
+  return true;
+};
+
+// ============================================
+// STUDY SESSION HELPER FUNCTIONS
+// ============================================
+
+// Get all study sessions for a user
+export const getStudySessions = async (userId: string, limit?: number) => {
+  let query = supabase
+    .from('study_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('completed_at', { ascending: false });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a new study session
+export const createStudySession = async (session: any) => {
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .insert({
+      ...session,
+      completed_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// ============================================
+// CALENDAR EVENT HELPER FUNCTIONS
+// ============================================
+
+// Get all calendar events for a user
+export const getCalendarEvents = async (userId: string, startDate?: string, endDate?: string) => {
+  let query = supabase
+    .from('calendar_events')
+    .select('*')
+    .eq('user_id', userId)
+    .order('start_time', { ascending: true });
+
+  if (startDate) {
+    query = query.gte('start_time', startDate);
+  }
+
+  if (endDate) {
+    query = query.lte('start_time', endDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+};
+
+// Get a specific calendar event
+export const getCalendarEvent = async (eventId: string) => {
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .select('*')
+    .eq('id', eventId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a new calendar event
+export const createCalendarEvent = async (event: any) => {
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .insert({
+      ...event,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a calendar event
+export const updateCalendarEvent = async (eventId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .update(updates)
+    .eq('id', eventId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete a calendar event
+export const deleteCalendarEvent = async (eventId: string) => {
+  const { error } = await supabase
+    .from('calendar_events')
+    .delete()
+    .eq('id', eventId);
+
+  if (error) throw error;
+  return true;
+};
+
+// ============================================
+// PROGRESS TRACKING HELPER FUNCTIONS
+// ============================================
+
+// Get progress data for all subjects
+export const getSubjectProgress = async (userId: string) => {
+  // Get study sessions data
+  const { data: sessions, error: sessionsError } = await supabase
+    .from('study_sessions')
+    .select('subject, duration_minutes, completed_at')
+    .eq('user_id', userId);
+
+  if (sessionsError) throw sessionsError;
+
+  // Get flashcard data
+  const { data: flashcards, error: flashcardsError } = await supabase
+    .from('flashcards')
+    .select('subject, review_count, correct_count, created_at')
+    .eq('user_id', userId);
+
+  if (flashcardsError) throw flashcardsError;
+
+  // Process the data to calculate progress for each subject
+  const subjectMap = new Map();
+
+  // Process study sessions
+  sessions.forEach(session => {
+    const subject = session.subject;
+    if (!subjectMap.has(subject)) {
+      subjectMap.set(subject, {
+        subject,
+        total_minutes: 0,
+        session_count: 0,
+        flashcard_count: 0,
+        correct_reviews: 0,
+        total_reviews: 0,
+        last_studied: session.completed_at,
+      });
+    }
+
+    const subjectData = subjectMap.get(subject);
+    subjectData.total_minutes += session.duration_minutes;
+    subjectData.session_count += 1;
+
+    // Update last studied date if this session is more recent
+    if (new Date(session.completed_at) > new Date(subjectData.last_studied)) {
+      subjectData.last_studied = session.completed_at;
+    }
+  });
+
+  // Process flashcards
+  flashcards.forEach(card => {
+    const subject = card.subject;
+    if (!subjectMap.has(subject)) {
+      subjectMap.set(subject, {
+        subject,
+        total_minutes: 0,
+        session_count: 0,
+        flashcard_count: 0,
+        correct_reviews: 0,
+        total_reviews: 0,
+        last_studied: card.created_at,
+      });
+    }
+
+    const subjectData = subjectMap.get(subject);
+    subjectData.flashcard_count += 1;
+    subjectData.correct_reviews += card.correct_count;
+    subjectData.total_reviews += card.review_count;
+  });
+
+  // Convert to array and calculate accuracy rate
+  const progressData = Array.from(subjectMap.values()).map(data => ({
+    subject: data.subject,
+    total_minutes: data.total_minutes,
+    session_count: data.session_count,
+    flashcard_count: data.flashcard_count,
+    accuracy_rate: data.total_reviews > 0 
+      ? Math.round((data.correct_reviews / data.total_reviews) * 100) 
+      : 0,
+    last_studied: data.last_studied,
+  }));
+
+  return progressData;
 };
