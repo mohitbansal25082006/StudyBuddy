@@ -565,10 +565,10 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={styles.reviewButton}
+                  style={styles.cardReviewButton}
                   onPress={() => navigation.navigate('FlashcardReview', { subject: item.subject })}
                 >
-                  <Text style={styles.reviewButtonText}>Review</Text>
+                  <Text style={styles.cardReviewButtonText}>Review</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -624,6 +624,13 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
               style={styles.iconButton}
             >
               <Text style={styles.iconButtonText}>💡</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={() => setShowGenerateModal(true)}
+              style={styles.iconButton}
+            >
+              <Text style={styles.iconButtonText}>🤖</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -735,7 +742,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           <Button
             title="Start Review"
             onPress={handleStartReview}
-            style={styles.reviewButton}
+            style={styles.startReviewButton}
           />
         </Animated.View>
       )}
@@ -1371,7 +1378,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#B45309',
   },
-  reviewButton: {
+  startReviewButton: {
     backgroundColor: '#6366F1',
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1497,7 +1504,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
   },
-  reviewButtonText: {
+  cardReviewButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  cardReviewButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
