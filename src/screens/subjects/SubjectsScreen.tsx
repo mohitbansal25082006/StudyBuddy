@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\screens\subjects\SubjectsScreen.tsx
 // ============================================
-// SUBJECTS SCREEN - ADVANCED VERSION
-// Enhanced subject management with advanced features
+// SUBJECTS SCREEN - ADVANCED VERSION WITH REAL-TIME TRACKING
+// Enhanced subject management with real-time study tracking
 // ============================================
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { getSubjectProgress, createStudySession, getStudySessions } from '../../services/supabase';
 import { SubjectProgress, StudySession } from '../../types';
 import { Button } from '../../components/Button';
@@ -59,19 +60,27 @@ interface ExtendedSubjectData {
   average_session_length: number;
   improvement_rate: number;
   study_goal: string;
+  isCurrentlyStudying?: boolean;
+  currentSessionTime?: number;
 }
 
 export const SubjectsScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
   const { subjectProgress, fetchSubjectProgress } = useStudyStore();
+  const { 
+    activeSession, 
+    todaySessions, 
+    startSession, 
+    pauseSession, 
+    resumeSession, 
+    stopSession, 
+    updateDuration 
+  } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sessionModalVisible, setSessionModalVisible] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [sessionTimer, setSessionTimer] = useState(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'progress' | 'recent'>('recent');
   const [showSortModal, setShowSortModal] = useState(false);
@@ -86,6 +95,19 @@ export const SubjectsScreen = ({ navigation }: any) => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Set up timer for real-time updates
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      updateDuration();
+    }, 1000);
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [updateDuration]);
 
   // Load data
   useEffect(() => {
@@ -117,25 +139,6 @@ export const SubjectsScreen = ({ navigation }: any) => {
 
     loadData();
   }, [user, fetchSubjectProgress]);
-
-  // Timer effect
-  useEffect(() => {
-    if (isTimerRunning && sessionStartTime) {
-      timerRef.current = setInterval(() => {
-        setSessionTimer(Math.floor((new Date().getTime() - sessionStartTime.getTime()) / 1000));
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    }
-    
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isTimerRunning, sessionStartTime]);
 
   // Calculate statistics
   const calculateStats = (sessions: StudySession[]) => {
@@ -231,6 +234,10 @@ export const SubjectsScreen = ({ navigation }: any) => {
       const subjectSessions = recentSessions.filter(s => s.subject === subject);
       const lastSession = subjectSessions[0];
       
+      // Check if this subject is currently being studied
+      const isCurrentlyStudying = activeSession?.subject === subject && activeSession.isRunning;
+      const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
+      
       return {
         subject,
         total_minutes: progress?.total_minutes || 0,
@@ -245,9 +252,11 @@ export const SubjectsScreen = ({ navigation }: any) => {
           : 0,
         improvement_rate: calculateImprovementRate(subjectSessions),
         study_goal: getStudyGoal(subject),
+        isCurrentlyStudying,
+        currentSessionTime,
       };
     });
-  }, [profile?.subjects, subjectProgress, recentSessions]);
+  }, [profile?.subjects, subjectProgress, recentSessions, activeSession]);
 
   // Calculate improvement rate
   const calculateImprovementRate = (sessions: StudySession[]) => {
@@ -323,31 +332,30 @@ export const SubjectsScreen = ({ navigation }: any) => {
   const handleStartSession = (subject: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedSubject(subject);
-    setSessionStartTime(new Date());
-    setSessionTimer(0);
-    setIsTimerRunning(true);
+    startSession(subject);
     setSessionModalVisible(true);
   };
 
   // Handle completing a study session
   const handleCompleteSession = async () => {
-    if (!selectedSubject || !sessionStartTime || !user) return;
+    if (!activeSession || !user) return;
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setIsTimerRunning(false);
     
-    const endTime = new Date();
-    const durationMinutes = Math.round((endTime.getTime() - sessionStartTime.getTime()) / 60000);
+    const durationMinutes = Math.floor(activeSession.duration / 60);
 
     try {
-      // Create study session
+      // Create study session in database
       await createStudySession({
         user_id: user.id,
-        subject: selectedSubject,
+        subject: activeSession.subject,
         duration_minutes: durationMinutes,
         session_type: 'study_plan',
-        notes: `Study session for ${selectedSubject}`,
+        notes: `Study session for ${activeSession.subject}`,
       });
+
+      // Stop the session in the store
+      stopSession();
 
       // Refresh data
       await fetchSubjectProgress(user.id);
@@ -358,13 +366,11 @@ export const SubjectsScreen = ({ navigation }: any) => {
       // Close modal
       setSessionModalVisible(false);
       setSelectedSubject(null);
-      setSessionStartTime(null);
-      setSessionTimer(0);
 
       // Show success message with stats
       Alert.alert(
         'Session Complete! 🎉',
-        `Great job! You studied ${selectedSubject} for ${formatTime(durationMinutes * 60)}.\n\nKeep up the good work!`,
+        `Great job! You studied ${activeSession.subject} for ${formatTime(activeSession.duration)}.\n\nKeep up the good work!`,
         [{ text: 'Awesome!', style: 'default' }]
       );
     } catch (error) {
@@ -376,17 +382,19 @@ export const SubjectsScreen = ({ navigation }: any) => {
   // Handle pause/resume timer
   const handleToggleTimer = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsTimerRunning(!isTimerRunning);
+    if (activeSession?.isRunning) {
+      pauseSession();
+    } else {
+      resumeSession();
+    }
   };
 
   // Handle canceling a study session
   const handleCancelSession = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setIsTimerRunning(false);
+    stopSession();
     setSessionModalVisible(false);
     setSelectedSubject(null);
-    setSessionStartTime(null);
-    setSessionTimer(0);
   };
 
   // Handle sharing progress
@@ -451,6 +459,14 @@ export const SubjectsScreen = ({ navigation }: any) => {
             transform: [{ translateY }],
             backgroundColor: item.color + '10',
             borderColor: item.color,
+            ...(item.isCurrentlyStudying && {
+              borderWidth: 3,
+              shadowColor: item.color,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 8,
+            })
           }
         ]}
       >
@@ -468,16 +484,31 @@ export const SubjectsScreen = ({ navigation }: any) => {
               </View>
             </View>
             
-            <View style={styles.streakContainer}>
-              <Text style={styles.streakIcon}>🔥</Text>
-              <Text style={styles.streakText}>{studyStreak}</Text>
-            </View>
+            {item.isCurrentlyStudying && (
+              <View style={styles.activeSessionIndicator}>
+                <Text style={styles.activeSessionText}>STUDYING</Text>
+              </View>
+            )}
+            
+            {!item.isCurrentlyStudying && (
+              <View style={styles.streakContainer}>
+                <Text style={styles.streakIcon}>🔥</Text>
+                <Text style={styles.streakText}>{studyStreak}</Text>
+              </View>
+            )}
           </View>
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{formatStudyTime(item.total_minutes)}</Text>
-              <Text style={styles.statLabel}>Total Time</Text>
+              <Text style={styles.statValue}>
+                {item.isCurrentlyStudying && item.currentSessionTime
+                  ? formatTime(item.currentSessionTime)
+                  : formatStudyTime(item.total_minutes)
+                }
+              </Text>
+              <Text style={styles.statLabel}>
+                {item.isCurrentlyStudying ? 'Current' : 'Total Time'}
+              </Text>
             </View>
             
             <View style={styles.statItem}>
@@ -550,11 +581,20 @@ export const SubjectsScreen = ({ navigation }: any) => {
         )}
         
         <View style={styles.actionsContainer}>
-          <Button
-            title="Study"
-            onPress={() => handleStartSession(item.subject)}
-            style={[styles.actionButton, { backgroundColor: item.color }]}
-          />
+          {item.isCurrentlyStudying ? (
+            <Button
+              title="View Session"
+              onPress={() => setSessionModalVisible(true)}
+              style={[styles.actionButton, { backgroundColor: item.color }]}
+            />
+          ) : (
+            <Button
+              title="Study"
+              onPress={() => handleStartSession(item.subject)}
+              style={[styles.actionButton, { backgroundColor: item.color }]}
+            />
+          )}
+          
           <Button
             title="Flashcards"
             onPress={() => navigation.navigate('Flashcards', { subject: item.subject })}
@@ -600,8 +640,15 @@ export const SubjectsScreen = ({ navigation }: any) => {
           </View>
           
           <View style={styles.overallStatItem}>
-            <Text style={styles.overallStatValue}>{formatStudyTime(totalStudyTime)}</Text>
-            <Text style={styles.overallStatLabel}>Total Time</Text>
+            <Text style={styles.overallStatValue}>
+              {activeSession && activeSession.isRunning
+                ? formatTime(activeSession.duration)
+                : formatStudyTime(totalStudyTime)
+              }
+            </Text>
+            <Text style={styles.overallStatLabel}>
+              {activeSession && activeSession.isRunning ? 'Current Session' : 'Total Time'}
+            </Text>
           </View>
           
           <View style={styles.overallStatItem}>
@@ -609,6 +656,21 @@ export const SubjectsScreen = ({ navigation }: any) => {
             <Text style={styles.overallStatLabel}>Subjects</Text>
           </View>
         </View>
+        
+        {/* Active Session Banner */}
+        {activeSession && activeSession.isRunning && (
+          <View style={styles.activeSessionBanner}>
+            <Text style={styles.activeSessionBannerText}>
+              Currently studying: {activeSession.subject} - {formatTime(activeSession.duration)}
+            </Text>
+            <TouchableOpacity
+              style={styles.activeSessionBannerButton}
+              onPress={() => setSessionModalVisible(true)}
+            >
+              <Text style={styles.activeSessionBannerButtonText}>View</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         
         {/* Achievements */}
         {achievements.length > 0 && (
@@ -692,7 +754,7 @@ export const SubjectsScreen = ({ navigation }: any) => {
         onRequestClose={handleCancelSession}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.sessionModal, { borderColor: selectedSubject ? allSubjects.find(s => s.subject === selectedSubject)?.color : '#6366F1' }]}>
+          <View style={[styles.sessionModal, { borderColor: activeSession ? allSubjects.find(s => s.subject === activeSession.subject)?.color : '#6366F1' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Study Session</Text>
               <TouchableOpacity onPress={handleCancelSession} style={styles.closeButton}>
@@ -700,27 +762,27 @@ export const SubjectsScreen = ({ navigation }: any) => {
               </TouchableOpacity>
             </View>
             
-            {selectedSubject && (
+            {activeSession && (
               <View style={styles.modalSubject}>
-                <Text style={[styles.modalSubjectName, { color: allSubjects.find(s => s.subject === selectedSubject)?.color }]}>
-                  {selectedSubject}
+                <Text style={[styles.modalSubjectName, { color: allSubjects.find(s => s.subject === activeSession.subject)?.color }]}>
+                  {activeSession.subject}
                 </Text>
-                <Text style={styles.modalTimer}>{formatTime(sessionTimer)}</Text>
+                <Text style={styles.modalTimer}>{formatTime(activeSession.duration)}</Text>
               </View>
             )}
             
             <View style={styles.timerDisplay}>
-              <Text style={styles.timerText}>{formatTime(sessionTimer)}</Text>
+              <Text style={styles.timerText}>{activeSession ? formatTime(activeSession.duration) : '00:00'}</Text>
               <Text style={styles.timerLabel}>Studying</Text>
             </View>
             
             <View style={styles.sessionActions}>
               <TouchableOpacity
-                style={[styles.timerControlButton, { backgroundColor: isTimerRunning ? '#F59E0B' : '#10B981' }]}
+                style={[styles.timerControlButton, { backgroundColor: activeSession?.isRunning ? '#F59E0B' : '#10B981' }]}
                 onPress={handleToggleTimer}
               >
                 <Text style={styles.timerControlText}>
-                  {isTimerRunning ? '⏸️ Pause' : '▶️ Resume'}
+                  {activeSession?.isRunning ? '⏸️ Pause' : '▶️ Resume'}
                 </Text>
               </TouchableOpacity>
               
@@ -810,7 +872,12 @@ export const SubjectsScreen = ({ navigation }: any) => {
               <View style={styles.detailedStats}>
                 <View style={styles.detailStatItem}>
                   <Text style={styles.detailStatLabel}>Total Study Time</Text>
-                  <Text style={styles.detailStatValue}>{formatStudyTime(selectedStatsSubject.total_minutes)}</Text>
+                  <Text style={styles.detailStatValue}>
+                    {selectedStatsSubject.isCurrentlyStudying && selectedStatsSubject.currentSessionTime
+                      ? formatTime(selectedStatsSubject.currentSessionTime)
+                      : formatStudyTime(selectedStatsSubject.total_minutes)
+                    }
+                  </Text>
                 </View>
                 
                 <View style={styles.detailStatItem}>
@@ -899,7 +966,7 @@ const styles = StyleSheet.create({
   overallStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   overallStatItem: {
     flex: 1,
@@ -924,6 +991,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  activeSessionBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  activeSessionBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366F1',
+    flex: 1,
+  },
+  activeSessionBannerButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  activeSessionBannerButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   achievementsContainer: {
     marginBottom: 16,
@@ -1041,6 +1134,17 @@ const styles = StyleSheet.create({
   },
   accuracyText: {
     fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  activeSessionIndicator: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  activeSessionText: {
+    fontSize: 10,
     fontWeight: '600',
     color: '#FFFFFF',
   },

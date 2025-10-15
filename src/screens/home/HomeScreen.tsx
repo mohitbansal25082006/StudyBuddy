@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\screens\home\HomeScreen.tsx
 // ============================================
-// HOME SCREEN - ADVANCED VERSION
-// Enhanced dashboard with rich features and profile integration
+// HOME SCREEN - ADVANCED VERSION WITH REAL-TIME TRACKING
+// Enhanced dashboard with rich features and real-time session tracking
 // ============================================
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { getCalendarEvents, getStudySessions, getFlashcardsForReview, getSubjectProgress } from '../../services/supabase';
 import { CalendarEvent, StudySession, Flashcard, SubjectProgress } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -54,6 +55,7 @@ const STUDY_TIPS = [
 export const HomeScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
   const { studySessions, calendarEvents, addStudySession } = useStudyStore();
+  const { activeSession, todaySessions, updateDuration } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,6 +80,21 @@ export const HomeScreen = ({ navigation }: any) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
+  
+  // Set up timer for real-time updates
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      updateDuration();
+    }, 1000);
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [updateDuration]);
 
   // Load data
   const loadData = async () => {
@@ -219,6 +236,17 @@ export const HomeScreen = ({ navigation }: any) => {
     return 'Good evening';
   };
 
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const formatStudyTime = (minutes: number) => {
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
@@ -231,7 +259,7 @@ export const HomeScreen = ({ navigation }: any) => {
     const totalHours = Math.floor(weeklyProgress / 60);
     const totalMins = weeklyProgress % 60;
     
-    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards to Review: ${dueFlashcards.length}\n\n#StudyBuddy #LearningProgress`;
+    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${activeSession && activeSession.isRunning ? formatTime(activeSession.duration) : formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards to Review: ${dueFlashcards.length}\n\n#StudyBuddy #LearningProgress`;
     
     try {
       await Share.share({
@@ -266,7 +294,9 @@ export const HomeScreen = ({ navigation }: any) => {
 
   // Get progress percentage
   const getProgressPercentage = () => {
-    return Math.min(Math.round((weeklyProgress / weeklyGoal) * 100), 100);
+    // Include active session time if running
+    const currentProgress = weeklyProgress + (activeSession && activeSession.isRunning ? Math.floor(activeSession.duration / 60) : 0);
+    return Math.min(Math.round((currentProgress / weeklyGoal) * 100), 100);
   };
 
   // Get progress color
@@ -278,28 +308,40 @@ export const HomeScreen = ({ navigation }: any) => {
   };
 
   // Render subject progress item
-  const renderSubjectProgress = ({ item }: { item: SubjectProgress }) => (
-    <View style={styles.subjectProgressItem}>
-      <View style={styles.subjectProgressHeader}>
-        <Text style={styles.subjectProgressName}>{item.subject}</Text>
-        <Text style={styles.subjectProgressTime}>{formatStudyTime(item.total_minutes)}</Text>
-      </View>
-      <View style={styles.subjectProgressBar}>
-        <View 
-          style={[
-            styles.subjectProgressFill, 
-            { 
-              width: `${Math.min(item.total_minutes / 60, 100)}%`,
-              backgroundColor: SUBJECT_COLORS[Math.floor(Math.random() * SUBJECT_COLORS.length)]
+  const renderSubjectProgress = ({ item }: { item: SubjectProgress }) => {
+    // Check if this subject is currently being studied
+    const isCurrentlyStudying = activeSession?.subject === item.subject && activeSession.isRunning;
+    const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
+    
+    return (
+      <View style={styles.subjectProgressItem}>
+        <View style={styles.subjectProgressHeader}>
+          <Text style={styles.subjectProgressName}>{item.subject}</Text>
+          <Text style={styles.subjectProgressTime}>
+            {isCurrentlyStudying && currentSessionTime
+              ? formatTime(currentSessionTime)
+              : formatStudyTime(item.total_minutes)
             }
-          ]} 
-        />
+          </Text>
+        </View>
+        <View style={styles.subjectProgressBar}>
+          <View 
+            style={[
+              styles.subjectProgressFill, 
+              { 
+                width: `${Math.min((item.total_minutes / 60) + (isCurrentlyStudying ? currentSessionTime / 60 : 0), 100)}%`,
+                backgroundColor: SUBJECT_COLORS[Math.floor(Math.random() * SUBJECT_COLORS.length)]
+              }
+            ]} 
+          />
+        </View>
+        <Text style={styles.subjectProgressStats}>
+          {item.session_count} sessions • {item.flashcard_count} cards • {item.accuracy_rate}% accuracy
+          {isCurrentlyStudying && <Text style={styles.currentlyStudyingText}> • Currently studying</Text>}
+        </Text>
       </View>
-      <Text style={styles.subjectProgressStats}>
-        {item.session_count} sessions • {item.flashcard_count} cards • {item.accuracy_rate}% accuracy
-      </Text>
-    </View>
-  );
+    );
+  };
 
   // Subject colors for progress bars
   const SUBJECT_COLORS = [
@@ -371,6 +413,28 @@ export const HomeScreen = ({ navigation }: any) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Active Session Banner */}
+        {activeSession && activeSession.isRunning && (
+          <Animated.View 
+            style={[
+              styles.activeSessionBanner, 
+              { opacity: fadeAnim }
+            ]}
+          >
+            <View style={styles.activeSessionContent}>
+              <Text style={styles.activeSessionTitle}>Currently Studying</Text>
+              <Text style={styles.activeSessionSubject}>{activeSession.subject}</Text>
+              <Text style={styles.activeSessionTimer}>{formatTime(activeSession.duration)}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.activeSessionButton}
+              onPress={() => navigation.navigate('Subjects')}
+            >
+              <Text style={styles.activeSessionButtonText}>View</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
         {/* Today's Stats */}
         <Animated.View 
           style={[
@@ -382,8 +446,15 @@ export const HomeScreen = ({ navigation }: any) => {
           ]}
         >
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{formatStudyTime(todayStudyTime)}</Text>
-            <Text style={styles.statLabel}>Today's Study</Text>
+            <Text style={styles.statValue}>
+              {activeSession && activeSession.isRunning
+                ? formatTime(activeSession.duration)
+                : formatStudyTime(todayStudyTime)
+              }
+            </Text>
+            <Text style={styles.statLabel}>
+              {activeSession && activeSession.isRunning ? "Current Session" : "Today's Study"}
+            </Text>
           </View>
           
           <View style={styles.statCard}>
@@ -408,7 +479,7 @@ export const HomeScreen = ({ navigation }: any) => {
           
           <View style={styles.weeklyGoalProgress}>
             <Text style={styles.weeklyGoalText}>
-              {formatStudyTime(weeklyProgress)} / {formatStudyTime(weeklyGoal)}
+              {formatStudyTime(weeklyProgress + (activeSession && activeSession.isRunning ? Math.floor(activeSession.duration / 60) : 0))} / {formatStudyTime(weeklyGoal)}
             </Text>
             <Text style={[styles.weeklyGoalPercentage, { color: getProgressColor() }]}>
               {getProgressPercentage()}%
@@ -440,7 +511,7 @@ export const HomeScreen = ({ navigation }: any) => {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionButtons}>
             <Button
-              title="Start Study Session"
+              title={activeSession && activeSession.isRunning ? "View Session" : "Start Study Session"}
               onPress={() => navigation.navigate('Subjects')}
               style={styles.actionButton}
             />
@@ -591,8 +662,15 @@ export const HomeScreen = ({ navigation }: any) => {
                 </View>
                 
                 <View style={styles.profileStatItem}>
-                  <Text style={styles.profileStatValue}>{formatStudyTime(todayStudyTime)}</Text>
-                  <Text style={styles.profileStatLabel}>Today</Text>
+                  <Text style={styles.profileStatValue}>
+                    {activeSession && activeSession.isRunning
+                      ? formatTime(activeSession.duration)
+                      : formatStudyTime(todayStudyTime)
+                    }
+                  </Text>
+                  <Text style={styles.profileStatLabel}>
+                    {activeSession && activeSession.isRunning ? 'Current' : 'Today'}
+                  </Text>
                 </View>
                 
                 <View style={styles.profileStatItem}>
@@ -736,25 +814,39 @@ export const HomeScreen = ({ navigation }: any) => {
             </View>
             
             <ScrollView style={styles.statsContent}>
-              {subjectProgress.map(subject => (
-                <View key={subject.subject} style={styles.statsSubjectItem}>
-                  <Text style={styles.statsSubjectName}>{subject.subject}</Text>
-                  <View style={styles.statsSubjectDetails}>
-                    <Text style={styles.statsSubjectDetail}>
-                      Total Time: {formatStudyTime(subject.total_minutes)}
-                    </Text>
-                    <Text style={styles.statsSubjectDetail}>
-                      Sessions: {subject.session_count}
-                    </Text>
-                    <Text style={styles.statsSubjectDetail}>
-                      Flashcards: {subject.flashcard_count}
-                    </Text>
-                    <Text style={styles.statsSubjectDetail}>
-                      Accuracy: {subject.accuracy_rate}%
-                    </Text>
+              {subjectProgress.map(subject => {
+                // Check if this subject is currently being studied
+                const isCurrentlyStudying = activeSession?.subject === subject.subject && activeSession.isRunning;
+                const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
+                
+                return (
+                  <View key={subject.subject} style={styles.statsSubjectItem}>
+                    <Text style={styles.statsSubjectName}>{subject.subject}</Text>
+                    <View style={styles.statsSubjectDetails}>
+                      <Text style={styles.statsSubjectDetail}>
+                        Total Time: {isCurrentlyStudying && currentSessionTime
+                          ? formatTime(currentSessionTime)
+                          : formatStudyTime(subject.total_minutes)
+                        }
+                      </Text>
+                      <Text style={styles.statsSubjectDetail}>
+                        Sessions: {subject.session_count}
+                      </Text>
+                      <Text style={styles.statsSubjectDetail}>
+                        Flashcards: {subject.flashcard_count}
+                      </Text>
+                      <Text style={styles.statsSubjectDetail}>
+                        Accuracy: {subject.accuracy_rate}%
+                      </Text>
+                      {isCurrentlyStudying && (
+                        <Text style={styles.currentlyStudyingDetail}>
+                          Currently studying for {formatTime(currentSessionTime)}
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           </View>
         </View>
@@ -854,6 +946,51 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
+  },
+  activeSessionBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  activeSessionContent: {
+    flex: 1,
+  },
+  activeSessionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366F1',
+    marginBottom: 4,
+  },
+  activeSessionSubject: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  activeSessionTimer: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#6366F1',
+  },
+  activeSessionButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeSessionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -1013,6 +1150,10 @@ const styles = StyleSheet.create({
   subjectProgressStats: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  currentlyStudyingText: {
+    color: '#10B981',
+    fontWeight: '600',
   },
   scheduleContainer: {
     backgroundColor: '#FFFFFF',
@@ -1329,6 +1470,12 @@ const styles = StyleSheet.create({
   statsSubjectDetail: {
     fontSize: 14,
     color: '#6B7280',
+    marginBottom: 4,
+  },
+  currentlyStudyingDetail: {
+    fontSize: 14,
+    color: '#10B981',
+    fontWeight: '600',
     marginBottom: 4,
   },
 });

@@ -1,6 +1,6 @@
 // F:\StudyBuddy\src\components\ProgressChart.tsx
 // ============================================
-// PROGRESS CHART COMPONENT
+// PROGRESS CHART COMPONENT WITH REAL-TIME UPDATES
 // Displays study progress in a chart format
 // ============================================
 
@@ -8,6 +8,7 @@ import React from 'react';
 import { View, Text, Dimensions, StyleSheet } from 'react-native';
 import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import { SubjectProgress } from '../types';
+import { useSessionStore } from '../store/sessionStore';
 
 interface ProgressChartProps {
   data: SubjectProgress[];
@@ -17,6 +18,8 @@ interface ProgressChartProps {
 const { width: screenWidth } = Dimensions.get('window');
 
 export const ProgressChart: React.FC<ProgressChartProps> = ({ data, type }) => {
+  const { activeSession } = useSessionStore();
+  
   if (!data || data.length === 0) {
     return (
       <View style={styles.emptyContainer}>
@@ -42,12 +45,30 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, type }) => {
     },
   };
 
+  // Prepare data with real-time updates
+  const prepareData = () => {
+    return data.map(item => {
+      // Add current session time if active
+      let totalMinutes = item.total_minutes;
+      if (activeSession && activeSession.isRunning && activeSession.subject === item.subject) {
+        totalMinutes += Math.floor(activeSession.duration / 60);
+      }
+      
+      return {
+        ...item,
+        total_minutes: totalMinutes,
+      };
+    });
+  };
+
+  const enhancedData = prepareData();
+
   if (type === 'bar') {
     const barData = {
-      labels: data.map(item => item.subject.substring(0, 3)),
+      labels: enhancedData.map(item => item.subject.substring(0, 3)),
       datasets: [
         {
-          data: data.map(item => item.total_minutes / 60), // Convert to hours
+          data: enhancedData.map(item => item.total_minutes / 60), // Convert to hours
         },
       ],
     };
@@ -64,16 +85,21 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, type }) => {
           yAxisLabel=""
           yAxisSuffix="h"
         />
+        {activeSession && activeSession.isRunning && (
+          <Text style={styles.activeSessionNote}>
+            ⏱️ Currently studying: {activeSession.subject}
+          </Text>
+        )}
       </View>
     );
   }
 
   if (type === 'line') {
     const lineData = {
-      labels: data.map(item => item.subject.substring(0, 3)),
+      labels: enhancedData.map(item => item.subject.substring(0, 3)),
       datasets: [
         {
-          data: data.map(item => item.accuracy_rate),
+          data: enhancedData.map(item => item.accuracy_rate),
           color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
           strokeWidth: 2,
         },
@@ -92,12 +118,17 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, type }) => {
           bezier
           yAxisSuffix="%"
         />
+        {activeSession && activeSession.isRunning && (
+          <Text style={styles.activeSessionNote}>
+            ⏱️ Currently studying: {activeSession.subject}
+          </Text>
+        )}
       </View>
     );
   }
 
   if (type === 'pie') {
-    const pieData = data.map((item, index) => ({
+    const pieData = enhancedData.map((item, index) => ({
       name: item.subject,
       population: item.total_minutes,
       color: [
@@ -126,6 +157,11 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, type }) => {
           center={[10, 10]}
           absolute
         />
+        {activeSession && activeSession.isRunning && (
+          <Text style={styles.activeSessionNote}>
+            ⏱️ Currently studying: {activeSession.subject}
+          </Text>
+        )}
       </View>
     );
   }
@@ -157,6 +193,13 @@ const styles = StyleSheet.create({
   chart: {
     marginVertical: 8,
     borderRadius: 16,
+  },
+  activeSessionNote: {
+    fontSize: 12,
+    color: '#6366F1',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   emptyContainer: {
     backgroundColor: '#FFFFFF',
