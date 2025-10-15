@@ -1,20 +1,44 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+// ============================================
+// MAIN APP FILE
+// Entry point of the application
+// ============================================
+
+import React, { useEffect } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { StatusBar } from 'react-native';
+import { useAuthStore } from './src/store/authStore';
+import { AuthNavigator } from './src/navigation/AuthNavigator';
+import { AppNavigator } from './src/navigation/AppNavigator';
+import { LoadingSpinner } from './src/components/LoadingSpinner';
+
+const RootStack = createStackNavigator();
 
 export default function App() {
+  const { user, loading, initialized, initialize } = useAuthStore();
+
+  // Initialize auth on app start
+  useEffect(() => {
+    initialize();
+  }, []);
+
+  // Show loading spinner while initializing
+  if (!initialized || loading) {
+    return <LoadingSpinner message="Loading StudyBuddy..." />;
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <NavigationContainer>
+        <RootStack.Navigator screenOptions={{ headerShown: false }}>
+          {user ? (
+            <RootStack.Screen name="App" component={AppNavigator} />
+          ) : (
+            <RootStack.Screen name="Auth" component={AuthNavigator} />
+          )}
+        </RootStack.Navigator>
+      </NavigationContainer>
+    </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
