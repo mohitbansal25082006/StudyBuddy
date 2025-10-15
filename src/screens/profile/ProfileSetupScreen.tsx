@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { CommonActions } from '@react-navigation/native';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { updateProfile } from '../../services/supabase';
@@ -18,29 +19,11 @@ const LEARNING_STYLES = [
   { value: 'kinesthetic', label: '✋ Kinesthetic', description: 'Learn through doing' },
 ];
 
-const GRADE_LEVELS = [
-  'High School',
-  'Undergraduate',
-  'Graduate',
-  'Professional',
-  'Self-Learning',
-];
-
-const COMMON_SUBJECTS = [
-  'Mathematics',
-  'Physics',
-  'Chemistry',
-  'Biology',
-  'Computer Science',
-  'English',
-  'History',
-  'Geography',
-  'Economics',
-  'Psychology',
-];
+const GRADE_LEVELS = ['High School', 'Undergraduate', 'Graduate', 'Professional', 'Self-Learning'];
+const COMMON_SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'English', 'History', 'Geography', 'Economics', 'Psychology'];
 
 export const ProfileSetupScreen = ({ navigation }: any) => {
-  const { user, setProfile } = useAuthStore();
+  const { user, setProfile, refreshProfile } = useAuthStore();
   const [fullName, setFullName] = useState('');
   const [learningStyle, setLearningStyle] = useState<string | null>(null);
   const [gradeLevel, setGradeLevel] = useState<string | null>(null);
@@ -49,7 +32,6 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({ fullName: '', learningStyle: '', gradeLevel: '', subjects: '' });
 
-  // Toggle subject selection
   const toggleSubject = (subject: string) => {
     if (selectedSubjects.includes(subject)) {
       setSelectedSubjects(selectedSubjects.filter(s => s !== subject));
@@ -58,12 +40,9 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
     }
   };
 
-  // Handle profile setup
   const handleSetup = async () => {
-    // Reset errors
     setErrors({ fullName: '', learningStyle: '', gradeLevel: '', subjects: '' });
 
-    // Validate inputs
     let hasError = false;
     const newErrors = { fullName: '', learningStyle: '', gradeLevel: '', subjects: '' };
 
@@ -93,10 +72,18 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
       return;
     }
 
-    // Save profile
+    if (!user) {
+      Alert.alert('Error', 'User not found. Please try logging in again.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const updatedProfile = await updateProfile(user!.id, {
+      console.log('=== SAVING PROFILE ===');
+      console.log('User ID:', user.id);
+      console.log('Data:', { fullName, learningStyle, gradeLevel, subjects: selectedSubjects });
+      
+      const updatedProfile = await updateProfile(user.id, {
         full_name: fullName,
         learning_style: learningStyle,
         grade_level: gradeLevel,
@@ -104,14 +91,26 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
         study_goals: studyGoals,
       });
 
+      console.log('✓ Profile updated:', updatedProfile);
+      
+      // Update store immediately
       setProfile(updatedProfile);
-      Alert.alert('Success!', 'Your profile has been set up', [
-        {
-          text: 'Continue',
-          onPress: () => navigation.replace('Main'),
-        },
-      ]);
+      
+      // Also refresh to ensure sync
+      await refreshProfile();
+
+      console.log('✓ Profile saved and refreshed');
+
+      // Navigate to Main using reset to prevent back navigation
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        })
+      );
+
     } catch (error: any) {
+      console.error('✗ Profile setup error:', error);
       Alert.alert('Error', error.message || 'Failed to update profile');
     } finally {
       setLoading(false);
@@ -125,25 +124,15 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
     >
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={{ paddingHorizontal: 24, paddingTop: 60 }}>
-          {/* Header */}
           <View style={{ marginBottom: 32 }}>
-            <Text style={{
-              fontSize: 32,
-              fontWeight: 'bold',
-              color: '#111827',
-              marginBottom: 8,
-            }}>
+            <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#111827', marginBottom: 8 }}>
               Complete Your Profile
             </Text>
-            <Text style={{
-              fontSize: 16,
-              color: '#6B7280',
-            }}>
+            <Text style={{ fontSize: 16, color: '#6B7280' }}>
               Help us personalize your learning experience
             </Text>
           </View>
 
-          {/* Full Name */}
           <Input
             label="Full Name *"
             value={fullName}
@@ -153,17 +142,10 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
             error={errors.fullName}
           />
 
-          {/* Learning Style */}
           <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 12 }}>
               Learning Style *
             </Text>
-
             {LEARNING_STYLES.map((style) => (
               <TouchableOpacity
                 key={style.value}
@@ -180,53 +162,29 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{
-                    fontSize: 16,
-                    fontWeight: '600',
-                    color: '#111827',
-                    marginBottom: 4,
-                  }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 }}>
                     {style.label}
                   </Text>
-                  <Text style={{
-                    fontSize: 14,
-                    color: '#6B7280',
-                  }}>
+                  <Text style={{ fontSize: 14, color: '#6B7280' }}>
                     {style.description}
                   </Text>
                 </View>
                 {learningStyle === style.value && (
-                  <View style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    backgroundColor: '#6366F1',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center' }}>
                     <Text style={{ color: '#FFFFFF', fontSize: 16 }}>✓</Text>
                   </View>
                 )}
               </TouchableOpacity>
             ))}
             {errors.learningStyle && (
-              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>
-                {errors.learningStyle}
-              </Text>
+              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>{errors.learningStyle}</Text>
             )}
           </View>
 
-          {/* Grade Level */}
           <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 12 }}>
               Grade Level *
             </Text>
-
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
               {GRADE_LEVELS.map((level) => (
                 <TouchableOpacity
@@ -242,34 +200,21 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
                     margin: 4,
                   }}
                 >
-                  <Text style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: gradeLevel === level ? '#FFFFFF' : '#6B7280',
-                  }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: gradeLevel === level ? '#FFFFFF' : '#6B7280' }}>
                     {level}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
             {errors.gradeLevel && (
-              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>
-                {errors.gradeLevel}
-              </Text>
+              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>{errors.gradeLevel}</Text>
             )}
           </View>
 
-          {/* Subjects */}
           <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 12 }}>
               Subjects You're Studying *
             </Text>
-
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
               {COMMON_SUBJECTS.map((subject) => (
                 <TouchableOpacity
@@ -285,24 +230,17 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
                     margin: 4,
                   }}
                 >
-                  <Text style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: selectedSubjects.includes(subject) ? '#FFFFFF' : '#6B7280',
-                  }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: selectedSubjects.includes(subject) ? '#FFFFFF' : '#6B7280' }}>
                     {subject}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
             {errors.subjects && (
-              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>
-                {errors.subjects}
-              </Text>
+              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>{errors.subjects}</Text>
             )}
           </View>
 
-          {/* Study Goals */}
           <Input
             label="Study Goals (Optional)"
             value={studyGoals}
@@ -312,7 +250,6 @@ export const ProfileSetupScreen = ({ navigation }: any) => {
             numberOfLines={3}
           />
 
-          {/* Setup Button */}
           <Button
             title="Complete Setup"
             onPress={handleSetup}

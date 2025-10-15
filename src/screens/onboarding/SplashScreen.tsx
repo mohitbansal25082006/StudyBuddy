@@ -17,20 +17,30 @@ export const SplashScreen = ({ navigation }: any) => {
       setTimeout(() => {
         if (user) {
           // User is logged in
-          if (profile?.full_name && profile?.learning_style) {
+          console.log('User found:', user.email);
+          console.log('Profile:', profile);
+          
+          // Check if profile setup is complete
+          // Profile is complete if they have full_name AND learning_style
+          const isProfileComplete = profile?.full_name && profile?.learning_style;
+          
+          if (isProfileComplete) {
             // Profile is complete, go to main app
+            console.log('Profile complete, navigating to Main');
             navigation.replace('Main');
           } else {
             // Profile needs setup
+            console.log('Profile incomplete, navigating to ProfileSetup');
             navigation.replace('ProfileSetup');
           }
         } else {
           // User not logged in, show onboarding
+          console.log('No user, navigating to Onboarding');
           navigation.replace('Onboarding');
         }
       }, 1500); // Show splash for 1.5 seconds
     }
-  }, [initialized, user, profile]);
+  }, [initialized, user, profile, navigation]);
 
   return (
     <View style={{

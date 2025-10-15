@@ -15,12 +15,24 @@ import { LoadingSpinner } from './src/components/LoadingSpinner';
 const RootStack = createStackNavigator();
 
 export default function App() {
-  const { user, loading, initialized, initialize } = useAuthStore();
+  const { user, profile, loading, initialized, initialize } = useAuthStore();
 
   // Initialize auth on app start
   useEffect(() => {
+    console.log('App mounting, initializing auth...');
     initialize();
   }, []);
+
+  // Log state changes for debugging
+  useEffect(() => {
+    console.log('Auth State:', { 
+      initialized, 
+      loading, 
+      hasUser: !!user,
+      userEmail: user?.email,
+      profileComplete: !!(profile?.full_name && profile?.learning_style)
+    });
+  }, [initialized, loading, user, profile]);
 
   // Show loading spinner while initializing
   if (!initialized || loading) {

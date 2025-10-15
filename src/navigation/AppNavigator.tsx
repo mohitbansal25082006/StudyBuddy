@@ -3,7 +3,7 @@
 // Main navigation after authentication
 // ============================================
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { ProfileSetupScreen } from '../screens/profile/ProfileSetupScreen';
 import { ProfileEditScreen } from '../screens/profile/ProfileEditScreen';
@@ -13,7 +13,7 @@ import { useAuthStore } from '../store/authStore';
 
 const Stack = createStackNavigator<AppStackParamList>();
 
-// Temporary Main Screen (we'll build this in Part 2)
+// Main Screen Component
 const MainScreen = ({ navigation }: any) => {
   const { profile } = useAuthStore();
 
@@ -98,8 +98,18 @@ const MainScreen = ({ navigation }: any) => {
 };
 
 export const AppNavigator = () => {
+  const { profile } = useAuthStore();
+  
+  // Determine initial route based on profile completion
+  const isProfileComplete = profile?.full_name && profile?.learning_style;
+  const initialRouteName = isProfileComplete ? 'Main' : 'ProfileSetup';
+
+  console.log('AppNavigator - Profile complete:', isProfileComplete);
+  console.log('AppNavigator - Initial route:', initialRouteName);
+
   return (
     <Stack.Navigator
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
         gestureEnabled: true,
