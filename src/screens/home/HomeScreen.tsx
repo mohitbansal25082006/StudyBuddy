@@ -55,7 +55,14 @@ const STUDY_TIPS = [
 export const HomeScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
   const { studySessions, calendarEvents, addStudySession } = useStudyStore();
-  const { activeSession, todaySessions, updateDuration } = useSessionStore();
+  const { 
+    activeSession, 
+    todaySessions, 
+    todayFlashcardReviews, 
+    todayCorrectAnswers, 
+    todayIncorrectAnswers,
+    updateDuration 
+  } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -259,7 +266,7 @@ export const HomeScreen = ({ navigation }: any) => {
     const totalHours = Math.floor(weeklyProgress / 60);
     const totalMins = weeklyProgress % 60;
     
-    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${activeSession && activeSession.isRunning ? formatTime(activeSession.duration) : formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards to Review: ${dueFlashcards.length}\n\n#StudyBuddy #LearningProgress`;
+    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${activeSession && activeSession.isRunning ? formatTime(activeSession.duration) : formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards to Review: ${dueFlashcards.length}\n📝 Flashcards Reviewed: ${todayFlashcardReviews}\n✅ Correct Answers: ${todayCorrectAnswers}\n❌ Incorrect Answers: ${todayIncorrectAnswers}\n\n#StudyBuddy #LearningProgress`;
     
     try {
       await Share.share({
@@ -305,6 +312,12 @@ export const HomeScreen = ({ navigation }: any) => {
     if (percentage >= 80) return '#10B981';
     if (percentage >= 50) return '#F59E0B';
     return '#EF4444';
+  };
+
+  // Get flashcard accuracy
+  const getFlashcardAccuracy = () => {
+    if (todayFlashcardReviews === 0) return 0;
+    return Math.round((todayCorrectAnswers / todayFlashcardReviews) * 100);
   };
 
   // Render subject progress item
@@ -425,6 +438,14 @@ export const HomeScreen = ({ navigation }: any) => {
               <Text style={styles.activeSessionTitle}>Currently Studying</Text>
               <Text style={styles.activeSessionSubject}>{activeSession.subject}</Text>
               <Text style={styles.activeSessionTimer}>{formatTime(activeSession.duration)}</Text>
+              
+              {activeSession.type === 'flashcards' && (
+                <View style={styles.flashcardStats}>
+                  <Text style={styles.flashcardStatsText}>
+                    Reviewed: {todayFlashcardReviews} | Correct: {todayCorrectAnswers} | Accuracy: {getFlashcardAccuracy()}%
+                  </Text>
+                </View>
+              )}
             </View>
             <TouchableOpacity
               style={styles.activeSessionButton}
@@ -467,6 +488,44 @@ export const HomeScreen = ({ navigation }: any) => {
             <Text style={styles.statLabel}>Day Streak 🔥</Text>
           </View>
         </Animated.View>
+
+        {/* Flashcard Review Stats */}
+        {(todayFlashcardReviews > 0 || activeSession?.type === 'flashcards') && (
+          <Animated.View style={[styles.flashcardStatsContainer, { opacity: fadeAnim }]}>
+            <Text style={styles.flashcardStatsTitle}>Today's Flashcard Review</Text>
+            
+            <View style={styles.flashcardStatsGrid}>
+              <View style={styles.flashcardStatItem}>
+                <Text style={styles.flashcardStatValue}>{todayFlashcardReviews}</Text>
+                <Text style={styles.flashcardStatLabel}>Cards Reviewed</Text>
+              </View>
+              
+              <View style={styles.flashcardStatItem}>
+                <Text style={styles.flashcardStatValue}>{getFlashcardAccuracy()}%</Text>
+                <Text style={styles.flashcardStatLabel}>Accuracy</Text>
+              </View>
+              
+              <View style={styles.flashcardStatItem}>
+                <Text style={styles.flashcardStatValue}>{todayCorrectAnswers}</Text>
+                <Text style={styles.flashcardStatLabel}>Correct</Text>
+              </View>
+              
+              <View style={styles.flashcardStatItem}>
+                <Text style={styles.flashcardStatValue}>{todayIncorrectAnswers}</Text>
+                <Text style={styles.flashcardStatLabel}>Incorrect</Text>
+              </View>
+            </View>
+            
+            {activeSession?.type === 'flashcards' && (
+              <TouchableOpacity
+                style={styles.continueReviewButton}
+                onPress={() => navigation.navigate('FlashcardReview')}
+              >
+                <Text style={styles.continueReviewButtonText}>Continue Review</Text>
+              </TouchableOpacity>
+            )}
+          </Animated.View>
+        )}
 
         {/* Weekly Goal Progress */}
         <Animated.View style={[styles.weeklyGoalContainer, { opacity: fadeAnim }]}>
@@ -981,6 +1040,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#6366F1',
   },
+  flashcardStats: {
+    marginTop: 8,
+  },
+  flashcardStatsText: {
+    fontSize: 12,
+    color: '#6366F1',
+  },
   activeSessionButton: {
     backgroundColor: '#6366F1',
     paddingHorizontal: 16,
@@ -1022,6 +1088,63 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  flashcardStatsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  flashcardStatsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  flashcardStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  flashcardStatItem: {
+    width: '48%',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  flashcardStatValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#6366F1',
+    marginBottom: 4,
+  },
+  flashcardStatLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  continueReviewButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  continueReviewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   weeklyGoalContainer: {
     backgroundColor: '#FFFFFF',

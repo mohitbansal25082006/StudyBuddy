@@ -5,24 +5,37 @@
 // ============================================
 
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Dimensions, 
+  Modal 
+} from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getSubjectProgress, getStudySessions } from '../../services/supabase';
+import { getSubjectProgress, getStudySessions, getFlashcardsForReview } from '../../services/supabase';
 import { SubjectProgress, StudySession } from '../../types';
 import { ProgressChart } from '../../components/ProgressChart';
-import { SubjectItem } from '../../components/SubjectItem';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+
+const { width, height } = Dimensions.get('window');
 
 export const ProgressScreen = ({ navigation }: any) => {
   const { user } = useAuthStore();
   const { subjectProgress, studySessions, fetchSubjectProgress, fetchStudySessions } = useStudyStore();
-  const { activeSession, updateDuration } = useSessionStore();
+  const { activeSession, updateDuration, todayFlashcardReviews, todayCorrectAnswers, todayIncorrectAnswers } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
+  const [dueFlashcards, setDueFlashcards] = useState(0);
+  const [masteredFlashcards, setMasteredFlashcards] = useState(0);
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
   
   // Set up timer for real-time updates
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -50,6 +63,16 @@ export const ProgressScreen = ({ navigation }: any) => {
         // Get recent study sessions
         const sessions = await getStudySessions(user.id, 10);
         setRecentSessions(sessions);
+        
+        // Get flashcard stats
+        const flashcards = await getFlashcardsForReview(user.id);
+        setDueFlashcards(flashcards.length);
+        
+        // Calculate mastered flashcards
+        const mastered = subjectProgress.reduce((total, subject) => {
+          return total + Math.floor(subject.flashcard_count * (subject.accuracy_rate / 100));
+        }, 0);
+        setMasteredFlashcards(mastered);
       } catch (error) {
         console.error('Error loading progress data:', error);
       } finally {
@@ -85,6 +108,12 @@ export const ProgressScreen = ({ navigation }: any) => {
     return Math.round(totalAccuracy / subjectProgress.length);
   };
 
+  // Calculate flashcard accuracy
+  const getFlashcardAccuracy = () => {
+    if (todayFlashcardReviews === 0) return 0;
+    return Math.round((todayCorrectAnswers / todayFlashcardReviews) * 100);
+  };
+
   // Format time
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -107,7 +136,13 @@ export const ProgressScreen = ({ navigation }: any) => {
 
   // Handle subject press
   const handleSubjectPress = (subject: string) => {
-    navigation.navigate('Flashcards', { subject });
+    setSelectedSubject(subject);
+    setShowSubjectModal(true);
+  };
+
+  // Handle starting flashcard review
+  const handleStartReview = () => {
+    navigation.navigate('FlashcardReview', { subject: selectedSubject });
   };
 
   // Render subject progress item with real-time updates
@@ -165,6 +200,14 @@ export const ProgressScreen = ({ navigation }: any) => {
             <Text style={styles.activeSessionTitle}>Currently Studying</Text>
             <Text style={styles.activeSessionSubject}>{activeSession.subject}</Text>
             <Text style={styles.activeSessionTimer}>{formatTime(activeSession.duration)}</Text>
+            
+            {activeSession.type === 'flashcards' && (
+              <View style={styles.flashcardStats}>
+                <Text style={styles.flashcardStatsText}>
+                  Reviewed: {todayFlashcardReviews} | Correct: {todayCorrectAnswers} | Accuracy: {getFlashcardAccuracy()}%
+                </Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity
             style={styles.activeSessionButton}
@@ -191,7 +234,7 @@ export const ProgressScreen = ({ navigation }: any) => {
               }
             </Text>
             <Text style={styles.statLabel}>
-              {activeSession && activeSession.isRunning ? 'Current Session' : 'Total Study Time'}
+              {activeSession && activeSession.isRunning ? "Current Session" : "Total Study Time"}
             </Text>
           </View>
           
@@ -204,6 +247,42 @@ export const ProgressScreen = ({ navigation }: any) => {
             <Text style={styles.statValue}>{getAverageAccuracy()}%</Text>
             <Text style={styles.statLabel}>Avg. Accuracy</Text>
           </View>
+        </View>
+
+        {/* Flashcard Stats */}
+        <View style={styles.flashcardStatsContainer}>
+          <Text style={styles.flashcardStatsTitle}>Today's Flashcard Progress</Text>
+          
+          <View style={styles.flashcardStatsGrid}>
+            <View style={styles.flashcardStatItem}>
+              <Text style={styles.flashcardStatValue}>{todayFlashcardReviews}</Text>
+              <Text style={styles.flashcardStatLabel}>Reviewed</Text>
+            </View>
+            
+            <View style={styles.flashcardStatItem}>
+              <Text style={styles.flashcardStatValue}>{getFlashcardAccuracy()}%</Text>
+              <Text style={styles.flashcardStatLabel}>Accuracy</Text>
+            </View>
+            
+            <View style={styles.flashcardStatItem}>
+              <Text style={styles.flashcardStatValue}>{dueFlashcards}</Text>
+              <Text style={styles.flashcardStatLabel}>Due Today</Text>
+            </View>
+            
+            <View style={styles.flashcardStatItem}>
+              <Text style={styles.flashcardStatValue}>{masteredFlashcards}</Text>
+              <Text style={styles.flashcardStatLabel}>Mastered</Text>
+            </View>
+          </View>
+          
+          {activeSession?.type === 'flashcards' && (
+            <TouchableOpacity
+              style={styles.continueReviewButton}
+              onPress={() => navigation.navigate('FlashcardReview')}
+            >
+              <Text style={styles.continueReviewButtonText}>Continue Review</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Chart Type Selector */}
@@ -302,7 +381,7 @@ export const ProgressScreen = ({ navigation }: any) => {
                     style={styles.subjectItemButton}
                     onPress={() => handleSubjectPress(subject.subject)}
                   >
-                    <Text style={styles.subjectItemButtonText}>View Flashcards</Text>
+                    <Text style={styles.subjectItemButtonText}>View Details</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -346,6 +425,102 @@ export const ProgressScreen = ({ navigation }: any) => {
           )}
         </View>
       </ScrollView>
+
+      {/* Subject Details Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showSubjectModal}
+        onRequestClose={() => setShowSubjectModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {selectedSubject || 'Subject Details'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowSubjectModal(false)}>
+                <Text style={styles.closeButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {selectedSubject && (
+              <>
+                <View style={styles.subjectDetailHeader}>
+                  <Text style={styles.subjectDetailName}>{selectedSubject}</Text>
+                  <TouchableOpacity
+                    style={styles.reviewButton}
+                    onPress={handleStartReview}
+                  >
+                    <Text style={styles.reviewButtonText}>Review Cards</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.subjectDetailStats}>
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Total Study Time</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {formatStudyTime(
+                        subjectProgress.find(s => s.subject === selectedSubject)?.total_minutes || 0
+                      )}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Total Sessions</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {subjectProgress.find(s => s.subject === selectedSubject)?.session_count || 0}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Flashcards</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {subjectProgress.find(s => s.subject === selectedSubject)?.flashcard_count || 0}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Accuracy Rate</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {subjectProgress.find(s => s.subject === selectedSubject)?.accuracy_rate || 0}%
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Cards Due Today</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {dueFlashcards}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.subjectDetailActions}>
+                  <TouchableOpacity
+                    style={styles.subjectDetailButton}
+                    onPress={() => {
+                      setShowSubjectModal(false);
+                      navigation.navigate('Flashcards', { subject: selectedSubject });
+                    }}
+                  >
+                    <Text style={styles.subjectDetailButtonText}>View Flashcards</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.subjectDetailButton, styles.subjectDetailButtonSecondary]}
+                    onPress={() => {
+                      setShowSubjectModal(false);
+                      navigation.navigate('FlashcardReview', { subject: selectedSubject });
+                    }}
+                  >
+                    <Text style={styles.subjectDetailButtonTextSecondary}>Start Review</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -382,6 +557,13 @@ const styles = StyleSheet.create({
   activeSessionTimer: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: '#6366F1',
+  },
+  flashcardStats: {
+    marginTop: 8,
+  },
+  flashcardStatsText: {
+    fontSize: 12,
     color: '#6366F1',
   },
   activeSessionButton: {
@@ -439,6 +621,64 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  flashcardStatsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  flashcardStatsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  flashcardStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  flashcardStatItem: {
+    width: '48%',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  flashcardStatValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#6366F1',
+    marginBottom: 4,
+  },
+  flashcardStatLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  continueReviewButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  continueReviewButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   chartTypeContainer: {
     marginBottom: 16,
@@ -646,5 +886,103 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '90%',
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  closeButton: {
+    fontSize: 24,
+    color: '#6B7280',
+  },
+  subjectDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  subjectDetailName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  reviewButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  reviewButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  subjectDetailStats: {
+    marginBottom: 20,
+  },
+  subjectDetailStat: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  subjectDetailStatLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  subjectDetailStatValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  subjectDetailActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  subjectDetailButton: {
+    flex: 1,
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  subjectDetailButtonSecondary: {
+    backgroundColor: '#F3F4F6',
+  },
+  subjectDetailButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  subjectDetailButtonTextSecondary: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
   },
 });

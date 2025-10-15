@@ -1,149 +1,110 @@
 // F:\StudyBuddy\src\store\sessionStore.ts
 // ============================================
 // ZUSTAND SESSION STORE
-// Real-time study session tracking
+// Global state for active study sessions
 // ============================================
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { StudySession } from '../types';
 
-interface SessionState {
-  // Current active session
-  activeSession: {
-    subject: string;
-    startTime: Date | null;
-    isRunning: boolean;
-    duration: number; // in seconds
-  } | null;
-  
-  // Today's sessions
-  todaySessions: Array<{
-    subject: string;
-    duration: number; // in minutes
-    timestamp: Date;
-  }>;
-  
-  // Actions
-  startSession: (subject: string) => void;
-  pauseSession: () => void;
-  resumeSession: () => void;
-  stopSession: () => void;
-  updateDuration: () => void;
-  addCompletedSession: (subject: string, duration: number) => void;
-  clearTodaySessions: () => void;
+interface ActiveSession {
+  id: string;
+  subject: string;
+  startTime: Date;
+  duration: number; // in seconds
+  isRunning: boolean;
+  type: 'study_plan' | 'flashcards' | 'review';
 }
 
-export const useSessionStore = create<SessionState>()(
-  persist(
-    (set, get) => ({
-      // Initial state
-      activeSession: null,
-      todaySessions: [],
-      
-      // Start a new session
-      startSession: (subject: string) => {
-        set({
-          activeSession: {
-            subject,
-            startTime: new Date(),
-            isRunning: true,
-            duration: 0,
-          }
-        });
-      },
-      
-      // Pause the current session
-      pauseSession: () => {
-        set(state => {
-          if (!state.activeSession) return state;
-          return {
-            activeSession: {
-              ...state.activeSession,
-              isRunning: false,
-            }
-          };
-        });
-      },
-      
-      // Resume the current session
-      resumeSession: () => {
-        set(state => {
-          if (!state.activeSession) return state;
-          return {
-            activeSession: {
-              ...state.activeSession,
-              isRunning: true,
-            }
-          };
-        });
-      },
-      
-      // Stop the current session and add to today's sessions
-      stopSession: () => {
-        const state = get();
-        if (!state.activeSession) return;
-        
-        const { subject, duration } = state.activeSession;
-        const durationMinutes = Math.floor(duration / 60);
-        
-        // Add to today's sessions
-        set(state => ({
-          activeSession: null,
-          todaySessions: [
-            ...state.todaySessions,
-            {
-              subject,
-              duration: durationMinutes,
-              timestamp: new Date(),
-            }
-          ]
-        }));
-      },
-      
-      // Update the duration of the current session
-      updateDuration: () => {
-        const state = get();
-        if (!state.activeSession || !state.activeSession.startTime || !state.activeSession.isRunning) return;
-        
-        const now = new Date();
-        const duration = Math.floor((now.getTime() - state.activeSession.startTime.getTime()) / 1000);
-        
-        set({
-          activeSession: {
-            ...state.activeSession,
-            duration,
-          }
-        });
-      },
-      
-      // Add a completed session (from backend sync)
-      addCompletedSession: (subject: string, duration: number) => {
-        set(state => ({
-          todaySessions: [
-            ...state.todaySessions,
-            {
-              subject,
-              duration,
-              timestamp: new Date(),
-            }
-          ]
-        }));
-      },
-      
-      // Clear today's sessions (called at midnight)
-      clearTodaySessions: () => {
-        set({ todaySessions: [] });
-      },
-    }),
-    {
-      name: 'session-storage',
-      // Only persist the active session state, not the timer
-      partialize: (state) => ({
-        activeSession: state.activeSession ? {
-          ...state.activeSession,
-          startTime: state.activeSession.startTime?.toISOString() || null,
-        } : null,
-      }),
+interface SessionState {
+  activeSession: ActiveSession | null;
+  todaySessions: StudySession[];
+  todayFlashcardReviews: number;
+  todayCorrectAnswers: number;
+  todayIncorrectAnswers: number;
+  
+  // Actions
+  startSession: (subject: string, type: 'study_plan' | 'flashcards' | 'review') => void;
+  pauseSession: () => void;
+  resumeSession: () => void;
+  stopSession: () => void; // Changed from endSession to stopSession
+  updateDuration: () => void;
+  updateTodaySessions: (sessions: StudySession[]) => void;
+  incrementFlashcardReviews: (correct: boolean) => void;
+}
+
+export const useSessionStore = create<SessionState>((set, get) => ({
+  activeSession: null,
+  todaySessions: [],
+  todayFlashcardReviews: 0,
+  todayCorrectAnswers: 0,
+  todayIncorrectAnswers: 0,
+  
+  startSession: (subject, type) => {
+    const newSession: ActiveSession = {
+      id: Date.now().toString(),
+      subject,
+      startTime: new Date(),
+      duration: 0,
+      isRunning: true,
+      type,
+    };
+    
+    set({ activeSession: newSession });
+  },
+  
+  pauseSession: () => {
+    const { activeSession } = get();
+    if (activeSession && activeSession.isRunning) {
+      set({
+        activeSession: {
+          ...activeSession,
+          isRunning: false,
+        }
+      });
     }
-  )
-);
+  },
+  
+  resumeSession: () => {
+    const { activeSession } = get();
+    if (activeSession && !activeSession.isRunning) {
+      set({
+        activeSession: {
+          ...activeSession,
+          isRunning: true,
+        }
+      });
+    }
+  },
+  
+  stopSession: () => { // Changed from endSession to stopSession
+    set({ activeSession: null });
+  },
+  
+  updateDuration: () => {
+    const { activeSession } = get();
+    if (activeSession && activeSession.isRunning) {
+      const now = new Date();
+      const duration = Math.floor((now.getTime() - activeSession.startTime.getTime()) / 1000);
+      
+      set({
+        activeSession: {
+          ...activeSession,
+          duration,
+        }
+      });
+    }
+  },
+  
+  updateTodaySessions: (sessions) => {
+    set({ todaySessions: sessions });
+  },
+  
+  incrementFlashcardReviews: (correct) => {
+    set(state => ({
+      todayFlashcardReviews: state.todayFlashcardReviews + 1,
+      todayCorrectAnswers: correct ? state.todayCorrectAnswers + 1 : state.todayCorrectAnswers,
+      todayIncorrectAnswers: !correct ? state.todayIncorrectAnswers + 1 : state.todayIncorrectAnswers,
+    }));
+  },
+}));

@@ -332,7 +332,7 @@ export const SubjectsScreen = ({ navigation }: any) => {
   const handleStartSession = (subject: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedSubject(subject);
-    startSession(subject);
+    startSession(subject, 'study_plan'); // Added the second parameter
     setSessionModalVisible(true);
   };
 
@@ -350,7 +350,7 @@ export const SubjectsScreen = ({ navigation }: any) => {
         user_id: user.id,
         subject: activeSession.subject,
         duration_minutes: durationMinutes,
-        session_type: 'study_plan',
+        session_type: activeSession.type,
         notes: `Study session for ${activeSession.subject}`,
       });
 
