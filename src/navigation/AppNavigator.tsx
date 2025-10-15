@@ -7,7 +7,7 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 
 // Screens
 import { ProfileSetupScreen } from '../screens/profile/ProfileSetupScreen';
@@ -35,6 +35,43 @@ const Stack = createStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator();
 
 // ============================================
+// STYLES
+// ============================================
+
+const styles = StyleSheet.create({
+  tabContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 70, // Fixed width for each tab
+    paddingHorizontal: 2,
+  },
+  icon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  label: {
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 12,
+  },
+  labelFocused: {
+    color: '#6366F1',
+  },
+  labelUnfocused: {
+    color: '#9CA3AF',
+  },
+  tabBar: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    height: 70, // Reduced height
+    paddingBottom: 8,
+    paddingTop: 8,
+  },
+});
+
+// ============================================
 // TAB ICON COMPONENT
 // ============================================
 
@@ -47,38 +84,44 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
   const getIcon = (tabName: string): string => {
     const iconMap: { [key: string]: string } = {
       'Home': '🏠',
+      'Subjects': '📖',
       'StudyPlan': '📚',
       'Flashcards': '🗂️',
       'Calendar': '📅',
       'Progress': '📊',
-      'Subjects': '📖',
     };
     
     return iconMap[tabName] || '📱';
   };
 
-  const formatTabName = (tabName: string): string => {
-    return tabName.replace(/([A-Z])/g, ' $1').trim();
+  const getShortLabel = (tabName: string): string => {
+    const labelMap: { [key: string]: string } = {
+      'Home': 'Home',
+      'Subjects': 'Subjects',
+      'StudyPlan': 'Plan',
+      'Flashcards': 'Cards',
+      'Calendar': 'Calendar',
+      'Progress': 'Progress',
+    };
+    
+    return labelMap[tabName] || tabName;
   };
 
   return (
-    <View style={{ 
-      alignItems: 'center', 
-      justifyContent: 'center' 
-    }}>
-      <Text style={{ 
-        fontSize: 24, 
-        marginBottom: 4 
-      }}>
+    <View style={styles.tabContainer}>
+      <Text style={styles.icon}>
         {getIcon(name)}
       </Text>
       
-      <Text style={{ 
-        fontSize: 12, 
-        color: focused ? '#6366F1' : '#9CA3AF',
-        fontWeight: focused ? '600' : '400'
-      }}>
-        {formatTabName(name)}
+      <Text 
+        style={[
+          styles.label,
+          focused ? styles.labelFocused : styles.labelUnfocused
+        ]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {getShortLabel(name)}
       </Text>
     </View>
   );
@@ -93,16 +136,10 @@ const TabNavigator: React.FC = () => {
     tabBarIcon: ({ focused }: { focused: boolean }) => (
       <TabIcon name={route.name} focused={focused} />
     ),
+    tabBarLabel: () => null, // Hide default labels
     tabBarActiveTintColor: '#6366F1',
     tabBarInactiveTintColor: '#9CA3AF',
-    tabBarStyle: {
-      backgroundColor: '#FFFFFF',
-      borderTopWidth: 1,
-      borderTopColor: '#E5E7EB',
-      height: 80,
-      paddingBottom: 10,
-      paddingTop: 10,
-    },
+    tabBarStyle: styles.tabBar,
     headerShown: false,
   });
 
@@ -110,27 +147,45 @@ const TabNavigator: React.FC = () => {
     <Tab.Navigator screenOptions={tabScreenOptions}>
       <Tab.Screen 
         name="Home" 
-        component={HomeScreen} 
+        component={HomeScreen}
+        options={{
+          title: 'Home',
+        }}
       />
       <Tab.Screen 
         name="Subjects" 
-        component={SubjectsScreen} 
+        component={SubjectsScreen}
+        options={{
+          title: 'Subjects',
+        }}
       />
       <Tab.Screen 
         name="StudyPlan" 
-        component={StudyPlanScreen} 
+        component={StudyPlanScreen}
+        options={{
+          title: 'Study Plan',
+        }}
       />
       <Tab.Screen 
         name="Flashcards" 
-        component={FlashcardsScreen} 
+        component={FlashcardsScreen}
+        options={{
+          title: 'Flashcards',
+        }}
       />
       <Tab.Screen 
         name="Calendar" 
-        component={CalendarScreen} 
+        component={CalendarScreen}
+        options={{
+          title: 'Calendar',
+        }}
       />
       <Tab.Screen 
         name="Progress" 
-        component={ProgressScreen} 
+        component={ProgressScreen}
+        options={{
+          title: 'Progress',
+        }}
       />
     </Tab.Navigator>
   );
@@ -165,6 +220,9 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen 
         name="ProfileSetup" 
         component={ProfileSetupScreen} 
+        options={{
+          gestureEnabled: false, // Disable back gesture on profile setup
+        }}
       />
       <Stack.Screen 
         name="ProfileEdit" 
@@ -181,23 +239,37 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen 
         name="StudyPlanDetail" 
         component={StudyPlanDetailScreen} 
+        options={{
+          presentation: 'card',
+        }}
       />
       
       {/* Flashcard Screens */}
       <Stack.Screen 
         name="FlashcardReview" 
         component={FlashcardReviewScreen} 
+        options={{
+          presentation: 'card',
+        }}
       />
       
       {/* Calendar Screens */}
       <Stack.Screen 
         name="AddEvent" 
         component={AddEventScreen} 
+        options={{
+          presentation: 'modal',
+        }}
       />
       <Stack.Screen 
         name="EditEvent" 
         component={EditEventScreen} 
+        options={{
+          presentation: 'modal',
+        }}
       />
     </Stack.Navigator>
   );
 };
+
+export default AppNavigator;
