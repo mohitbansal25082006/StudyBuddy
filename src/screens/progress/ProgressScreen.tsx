@@ -4,7 +4,7 @@
 // Progress tracking with charts and real-time session updates
 // ============================================
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -13,6 +13,8 @@ import {
   TouchableOpacity, 
   Dimensions, 
   Modal,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
@@ -42,6 +44,7 @@ export const ProgressScreen = ({ navigation }: any) => {
   } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [chartType, setChartType] = useState<'line' | 'pie'>('line');
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [notReviewedToday, setNotReviewedToday] = useState<Flashcard[]>([]);
@@ -82,33 +85,41 @@ export const ProgressScreen = ({ navigation }: any) => {
   };
 
   // Load data
-  useEffect(() => {
-    const loadData = async () => {
-      if (!user) return;
+  const loadData = async () => {
+    if (!user) return;
+    
+    try {
+      // Fetch data from study store
+      await fetchSubjectProgress(user.id);
+      await fetchStudySessions(user.id, 10);
       
-      try {
-        // Fetch data from study store
-        await fetchSubjectProgress(user.id);
-        await fetchStudySessions(user.id, 10);
-        
-        // Get all flashcards
-        const allFlashcards = await getFlashcards(user.id);
-        setFlashcards(allFlashcards);
-        
-        // Filter flashcards based on review status
-        const userFlashcards = allFlashcards.filter(card => card.user_id === user.id);
-        const notReviewed = userFlashcards.filter(card => !wasReviewedToday(card));
-        const reviewed = userFlashcards.filter(card => wasReviewedToday(card));
-        
-        setNotReviewedToday(notReviewed);
-        setReviewedToday(reviewed);
-      } catch (error) {
-        console.error('Error loading progress data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // Get all flashcards
+      const allFlashcards = await getFlashcards(user.id);
+      setFlashcards(allFlashcards);
+      
+      // Filter flashcards based on review status
+      const userFlashcards = allFlashcards.filter(card => card.user_id === user.id);
+      const notReviewed = userFlashcards.filter(card => !wasReviewedToday(card));
+      const reviewed = userFlashcards.filter(card => wasReviewedToday(card));
+      
+      setNotReviewedToday(notReviewed);
+      setReviewedToday(reviewed);
+    } catch (error) {
+      console.error('Error loading progress data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // Handle refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [user]);
+
+  // Initial data load
+  useEffect(() => {
     loadData();
   }, [user, fetchSubjectProgress, fetchStudySessions]);
 
@@ -251,7 +262,18 @@ export const ProgressScreen = ({ navigation }: any) => {
         </View>
       )}
       
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#6366F1']} // Android color for the refresh indicator
+            tintColor="#6366F1" // iOS color for the refresh indicator
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Your Progress</Text>
@@ -639,6 +661,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20, // Extra padding for iOS to account for safe area
   },
   header: {
     marginBottom: 24,
