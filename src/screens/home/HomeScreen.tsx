@@ -348,6 +348,26 @@ export const HomeScreen = ({ navigation }: any) => {
     return Math.round((todayCorrectAnswers / todayFlashcardReviews) * 100);
   };
 
+  // Get session type icon and color
+  const getSessionTypeInfo = (sessionType: string) => {
+    switch (sessionType) {
+      case 'study_plan':
+        return { icon: '📚', color: '#6366F1', label: 'Study Plan' };
+      case 'flashcards':
+        return { icon: '🗂️', color: '#10B981', label: 'Flashcards' };
+      case 'review':
+        return { icon: '📝', color: '#F59E0B', label: 'Review' };
+      default:
+        return { icon: '📖', color: '#8B5CF6', label: 'Study' };
+    }
+  };
+
+  // Get subject color
+  const getSubjectColor = (subject: string) => {
+    const index = subjectProgress.findIndex(p => p.subject === subject);
+    return SUBJECT_COLORS[index % SUBJECT_COLORS.length];
+  };
+
   // Render subject progress item
   const renderSubjectProgress = ({ item, index }: { item: SubjectProgress; index: number }) => {
     // Check if this subject is currently being studied
@@ -448,6 +468,100 @@ export const HomeScreen = ({ navigation }: any) => {
           </View>
         )}
       </TouchableOpacity>
+    );
+  };
+
+  // Render recent study session
+  const renderRecentSession = ({ item, index }: { item: StudySession; index: number }) => {
+    const sessionTypeInfo = getSessionTypeInfo(item.session_type);
+    const subjectColor = getSubjectColor(item.subject);
+    
+    // Calculate when the session was completed
+    const sessionDate = new Date(item.completed_at);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    let dateText = '';
+    if (sessionDate.toDateString() === today.toDateString()) {
+      dateText = 'Today';
+    } else if (sessionDate.toDateString() === yesterday.toDateString()) {
+      dateText = 'Yesterday';
+    } else {
+      dateText = sessionDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+    }
+    
+    return (
+      <Animated.View
+        style={[
+          styles.sessionCard,
+          {
+            opacity: fadeAnim,
+            transform: [
+              {
+                translateY: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [20, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <View style={styles.sessionCardHeader}>
+          <View style={styles.sessionSubjectContainer}>
+            <View style={[styles.sessionSubjectIndicator, { backgroundColor: subjectColor }]} />
+            <Text style={styles.sessionSubject}>{item.subject}</Text>
+          </View>
+          <View style={styles.sessionTypeContainer}>
+            <Text style={styles.sessionTypeIcon}>{sessionTypeInfo.icon}</Text>
+            <Text style={[styles.sessionTypeLabel, { color: sessionTypeInfo.color }]}>
+              {sessionTypeInfo.label}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.sessionDetails}>
+          <View style={styles.sessionDurationContainer}>
+            <Text style={styles.sessionDurationValue}>{formatStudyTime(item.duration_minutes)}</Text>
+            <Text style={styles.sessionDurationLabel}>Duration</Text>
+          </View>
+          
+          <View style={styles.sessionDateContainer}>
+            <Text style={styles.sessionDateValue}>{dateText}</Text>
+            <Text style={styles.sessionDateLabel}>
+              {sessionDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              })}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.sessionCardFooter}>
+          <View style={styles.sessionProgressBar}>
+            <View 
+              style={[
+                styles.sessionProgressFill, 
+                { 
+                  width: `${Math.min((item.duration_minutes / 60) * 100, 100)}%`,
+                  backgroundColor: sessionTypeInfo.color
+                }
+              ]} 
+            />
+          </View>
+          <Text style={styles.sessionProgressText}>
+            {item.duration_minutes < 60 
+              ? `${item.duration_minutes} min` 
+              : `${Math.floor(item.duration_minutes / 60)}h ${item.duration_minutes % 60}m`
+            }
+          </Text>
+        </View>
+      </Animated.View>
     );
   };
 
@@ -739,25 +853,16 @@ export const HomeScreen = ({ navigation }: any) => {
           </View>
           
           {recentSessions.length > 0 ? (
-            recentSessions.slice(0, 3).map(session => (
-              <View key={session.id} style={styles.sessionCard}>
-                <View style={styles.sessionHeader}>
-                  <Text style={styles.sessionSubject}>{session.subject}</Text>
-                  <Text style={styles.sessionDuration}>{formatStudyTime(session.duration_minutes)}</Text>
-                </View>
-                <Text style={styles.sessionType}>
-                  {session.session_type.replace('_', ' ')}
-                </Text>
-                <Text style={styles.sessionDate}>
-                  {new Date(session.completed_at).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit'
-                  })}
-                </Text>
-              </View>
-            ))
+            <FlatList
+              data={recentSessions.slice(0, 3)}
+              renderItem={renderRecentSession}
+              keyExtractor={item => item.id}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+              ListHeaderComponent={
+                <View style={{ height: 10 }} />
+              }
+            />
           ) : (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No study sessions yet</Text>
@@ -1498,36 +1603,102 @@ const styles = StyleSheet.create({
     borderColor: '#F3F4F6',
   },
   sessionCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
-  sessionHeader: {
+  sessionCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 12,
+  },
+  sessionSubjectContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sessionSubjectIndicator: {
+    width: 4,
+    height: 20,
+    borderRadius: 2,
+    marginRight: 8,
   },
   sessionSubject: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: 'bold',
     color: '#111827',
   },
-  sessionDuration: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6366F1',
+  sessionTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  sessionType: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
-    textTransform: 'capitalize',
+  sessionTypeIcon: {
+    fontSize: 16,
+    marginRight: 4,
   },
-  sessionDate: {
+  sessionTypeLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  sessionDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sessionDurationContainer: {
+    alignItems: 'center',
+  },
+  sessionDurationValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#6366F1',
+    marginBottom: 2,
+  },
+  sessionDurationLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  sessionDateContainer: {
+    alignItems: 'center',
+  },
+  sessionDateValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 2,
+  },
+  sessionDateLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  sessionCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionProgressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    marginRight: 12,
+  },
+  sessionProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  sessionProgressText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   modalOverlay: {
     flex: 1,
