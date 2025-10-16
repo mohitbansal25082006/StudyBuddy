@@ -1,30 +1,29 @@
 // F:\StudyBuddy\src\components\Flashcard.tsx
 // ============================================
-// FLASHCARD COMPONENT
-// Displays a flashcard for review
+// FLASHCARD COMPONENT - SIMPLIFIED VERSION
+// Displays a flashcard with flip functionality
 // ============================================
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Image } from 'react-native';
 import { Flashcard as FlashcardType } from '../types';
 
 interface FlashcardProps {
   flashcard: FlashcardType;
-  onAnswer: (correct: boolean) => void;
-  onSkip: () => void;
 }
 
-export const Flashcard: React.FC<FlashcardProps> = ({ flashcard, onAnswer, onSkip }) => {
-  const [showAnswer, setShowAnswer] = useState(false);
+export const Flashcard: React.FC<FlashcardProps> = ({ flashcard }) => {
   const [flipAnimation] = useState(new Animated.Value(0));
+  const [isFlipped, setIsFlipped] = useState(false);
 
   const flipCard = () => {
+    setIsFlipped(!isFlipped);
+    
     Animated.timing(flipAnimation, {
-      toValue: showAnswer ? 0 : 1,
+      toValue: isFlipped ? 0 : 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
-    setShowAnswer(!showAnswer);
   };
 
   const frontInterpolate = flipAnimation.interpolate({
@@ -51,34 +50,25 @@ export const Flashcard: React.FC<FlashcardProps> = ({ flashcard, onAnswer, onSki
         <Animated.View style={[styles.card, styles.cardFront, frontAnimatedStyle]}>
           <Text style={styles.label}>Question</Text>
           <Text style={styles.content}>{flashcard.question}</Text>
+          
+          {flashcard.image_url && (
+            <Image source={{ uri: flashcard.image_url }} style={styles.cardImage} />
+          )}
+          
           <TouchableOpacity style={styles.flipButton} onPress={flipCard}>
-            <Text style={styles.flipButtonText}>Show Answer</Text>
+            <Text style={styles.flipButtonText}>Flip Card</Text>
           </TouchableOpacity>
         </Animated.View>
         
         <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle]}>
           <Text style={styles.label}>Answer</Text>
           <Text style={styles.content}>{flashcard.answer}</Text>
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={[styles.answerButton, styles.incorrectButton]} 
-              onPress={() => onAnswer(false)}
-            >
-              <Text style={styles.answerButtonText}>Incorrect</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.answerButton, styles.correctButton]} 
-              onPress={() => onAnswer(true)}
-            >
-              <Text style={styles.answerButtonText}>Correct</Text>
-            </TouchableOpacity>
-          </View>
+          
+          <TouchableOpacity style={styles.flipButton} onPress={flipCard}>
+            <Text style={styles.flipButtonText}>Flip Card</Text>
+          </TouchableOpacity>
         </Animated.View>
       </View>
-      
-      <TouchableOpacity style={styles.skipButton} onPress={onSkip}>
-        <Text style={styles.skipButtonText}>Skip</Text>
-      </TouchableOpacity>
     </View>
   );
 };
@@ -100,7 +90,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -129,7 +119,14 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  cardImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+    marginBottom: 16,
+    resizeMode: 'cover',
   },
   flipButton: {
     backgroundColor: '#F3F4F6',
@@ -141,37 +138,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#6366F1',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  answerButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 8,
-    alignItems: 'center',
-  },
-  incorrectButton: {
-    backgroundColor: '#FEE2E2',
-  },
-  correctButton: {
-    backgroundColor: '#D1FAE5',
-  },
-  answerButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  skipButton: {
-    marginTop: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  skipButtonText: {
-    fontSize: 14,
-    color: '#6B7280',
-    textDecorationLine: 'underline',
   },
 });

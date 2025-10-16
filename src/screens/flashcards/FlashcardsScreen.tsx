@@ -40,7 +40,6 @@ import {
   generateFlashcardContent, 
   generateFlashcardHint,
   generateFlashcardExplanation,
-  categorizeFlashcardsWithAI,
   optimizeStudySchedule
 } from '../../services/openai';
 import { Flashcard } from '../../types';
@@ -599,7 +598,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     );
   };
 
-  // Handle starting a review session
+  // Handle starting a review session - Modified to not start study session
   const handleStartReview = () => {
     // Check if there are any flashcards for the selected subject
     const subjectFlashcards = selectedSubject 
@@ -624,6 +623,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     }
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Navigate to review screen without starting a session
     navigation.navigate('FlashcardReview', { subject: selectedSubject });
   };
 
@@ -1598,7 +1598,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </View>
       </Modal>
 
-      {/* AI Features Modal */}
+      {/* AI Features Modal - Removed Categorize Flashcards button */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1631,17 +1631,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
               }}
             >
               <Text style={styles.aiFeatureButtonText}>📈 Optimize Study Schedule</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.aiFeatureButton}
-              onPress={() => {
-                setShowAIFeaturesModal(false);
-                // Navigate to AI categorization
-                Alert.alert('Coming Soon', 'AI categorization feature will be available soon!');
-              }}
-            >
-              <Text style={styles.aiFeatureButtonText}>🏷️ Categorize Flashcards</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1683,7 +1672,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Sort Modal */}
+      {/* Sort Modal - Removed checkmark icon */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1722,7 +1711,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 ]}>
                   {option.label}
                 </Text>
-                {sortBy === option.key && <Text style={styles.checkIcon}>✓</Text>}
               </TouchableOpacity>
             ))}
           </View>
@@ -2705,10 +2693,6 @@ const styles = StyleSheet.create({
   selectedSortOptionText: {
     color: '#6366F1',
     fontWeight: '600',
-  },
-  checkIcon: {
-    fontSize: 16,
-    color: '#6366F1',
   },
   statsModal: {
     backgroundColor: '#FFFFFF',
