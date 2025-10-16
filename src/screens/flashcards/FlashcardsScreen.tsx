@@ -115,6 +115,21 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
+  // Helper function to check if a card was reviewed today
+  const wasReviewedToday = (card: Flashcard): boolean => {
+    if (!card.last_reviewed) return false;
+    
+    const lastReviewed = new Date(card.last_reviewed);
+    const today = new Date();
+    
+    // Check if the card was reviewed today (same day)
+    return (
+      lastReviewed.getFullYear() === today.getFullYear() &&
+      lastReviewed.getMonth() === today.getMonth() &&
+      lastReviewed.getDate() === today.getDate()
+    );
+  };
+
   // Load data
   useEffect(() => {
     const loadData = async () => {
@@ -123,9 +138,14 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       try {
         await fetchFlashcards(user.id, selectedSubject || undefined);
         
-        // Get flashcards due for review
-        const due = await getFlashcardsForReview(user.id, selectedSubject || undefined);
-        setDueFlashcards(due);
+        // Get flashcards that haven't been reviewed today
+        const userFlashcards = flashcards.filter(card => card.user_id === user.id);
+        const subjectFiltered = selectedSubject 
+          ? userFlashcards.filter(card => card.subject === selectedSubject)
+          : userFlashcards;
+        
+        const notReviewedToday = subjectFiltered.filter(card => !wasReviewedToday(card));
+        setDueFlashcards(notReviewedToday);
         
         // Get flashcard stats
         const flashcardStats = await getFlashcardStats(user.id);
@@ -175,7 +195,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     };
 
     loadData();
-  }, [user, selectedSubject, fetchFlashcards]);
+  }, [user, selectedSubject, fetchFlashcards, flashcards]);
 
   // Categorize flashcards based on performance
   const categorizeFlashcards = () => {
@@ -194,8 +214,16 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     setRefreshing(true);
     if (user) {
       await fetchFlashcards(user.id, selectedSubject || undefined);
-      const due = await getFlashcardsForReview(user.id, selectedSubject || undefined);
-      setDueFlashcards(due);
+      
+      // Update due flashcards with the new logic
+      const userFlashcards = flashcards.filter(card => card.user_id === user.id);
+      const subjectFiltered = selectedSubject 
+        ? userFlashcards.filter(card => card.subject === selectedSubject)
+        : userFlashcards;
+      
+      const notReviewedToday = subjectFiltered.filter(card => !wasReviewedToday(card));
+      setDueFlashcards(notReviewedToday);
+      
       categorizeFlashcards();
       
       // Get updated stats
@@ -281,9 +309,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
 
     setAdding(true);
     try {
-      // Calculate next review time based on difficulty
       const now = new Date();
-      const nextReview = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 1 day from now
+      const nextReview = new Date(now.getTime() + (24 * 60 * 60 * 1000));
       
       await createFlashcard({
         user_id: user.id,
@@ -294,7 +321,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         next_review: nextReview.toISOString(),
       });
 
-      // Reset form
       setNewCard({
         subject: selectedSubject || '',
         question: '',
@@ -303,8 +329,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       });
       
       setShowAddModal(false);
-      
-      // Refresh flashcards
       await fetchFlashcards(user.id, selectedSubject || undefined);
       categorizeFlashcards();
       
@@ -339,8 +363,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       
       setShowEditModal(false);
       setEditingCard(null);
-      
-      // Refresh flashcards
       await fetchFlashcards(user.id, selectedSubject || undefined);
       categorizeFlashcards();
       
@@ -370,7 +392,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     try {
       console.log('Starting flashcard generation...');
       
-      // Generate flashcard content with timeout
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timed out')), 30000)
       );
@@ -385,7 +406,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       
       console.log('Flashcards generated successfully:', generatedCards.length);
 
-      // Set preview cards and show modal
       setAiPreviewCards(generatedCards);
       setShowGenerateModal(false);
       setShowAIPreviewModal(true);
@@ -418,11 +438,10 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     
     try {
       const now = new Date();
-      const nextReview = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 1 day from now
+      const nextReview = new Date(now.getTime() + (24 * 60 * 60 * 1000));
       
       console.log(`Adding ${aiPreviewCards.length} flashcards to database...`);
       
-      // Add each generated flashcard to the database
       for (const card of aiPreviewCards) {
         await createFlashcard({
           user_id: user.id,
@@ -434,7 +453,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         });
       }
 
-      // Reset form
       setGenerateForm({
         subject: selectedSubject || '',
         topic: '',
@@ -444,7 +462,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       setShowAIPreviewModal(false);
       setAiPreviewCards([]);
       
-      // Refresh flashcards
       await fetchFlashcards(user.id, selectedSubject || undefined);
       categorizeFlashcards();
       
@@ -464,6 +481,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     
     setOptimizing(true);
     try {
+      console.log('Starting study schedule optimization...');
+      
       const userFlashcards = flashcards.filter(card => card.user_id === user.id);
       
       if (userFlashcards.length === 0) {
@@ -472,8 +491,21 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         return;
       }
       
-      // Get optimized schedule from AI
-      const optimizedSchedule = await optimizeStudySchedule(userFlashcards, profile?.learning_style || 'visual');
+      console.log(`Optimizing schedule for ${userFlashcards.length} flashcards...`);
+      
+      // Get optimized schedule from AI with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timed out')), 30000)
+      );
+      
+      const optimizationPromise = optimizeStudySchedule(
+        userFlashcards, 
+        profile?.learning_style || 'visual'
+      );
+      
+      const optimizedSchedule = await Promise.race([optimizationPromise, timeoutPromise]) as any[];
+      
+      console.log(`Received ${optimizedSchedule.length} optimized schedule entries`);
       
       // Apply the optimized schedule
       for (const cardUpdate of optimizedSchedule) {
@@ -483,10 +515,20 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         });
       }
       
+      console.log('Schedule optimization complete, refreshing data...');
+      
       // Refresh flashcards
       await fetchFlashcards(user.id, selectedSubject || undefined);
-      const due = await getFlashcardsForReview(user.id, selectedSubject || undefined);
-      setDueFlashcards(due);
+      
+      // Update due flashcards with the new logic
+      const refreshedFlashcards = flashcards.filter(card => card.user_id === user.id);
+      const subjectFiltered = selectedSubject 
+        ? refreshedFlashcards.filter(card => card.subject === selectedSubject)
+        : refreshedFlashcards;
+      
+      const notReviewedToday = subjectFiltered.filter(card => !wasReviewedToday(card));
+      setDueFlashcards(notReviewedToday);
+      
       categorizeFlashcards();
       
       setShowOptimizeModal(false);
@@ -494,7 +536,17 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       Alert.alert('Success', 'Your study schedule has been optimized with AI');
     } catch (error: any) {
       console.error('Error optimizing study schedule:', error);
-      Alert.alert('Error', error.message || 'Failed to optimize study schedule');
+      
+      let errorMessage = 'Failed to optimize study schedule';
+      if (error.message.includes('timeout')) {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (error.message.includes('API key')) {
+        errorMessage = 'API key not configured. Please check your settings.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setOptimizing(false);
     }
@@ -531,7 +583,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
 
   // Handle starting a review session
   const handleStartReview = () => {
-    // Check if there are any flashcards for the selected subject
     const subjectFlashcards = selectedSubject 
       ? flashcards.filter(card => card.subject === selectedSubject)
       : flashcards;
@@ -545,7 +596,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     }
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to review screen with all flashcards for the subject
     navigation.navigate('FlashcardReview', { 
       subject: selectedSubject,
       flashcards: subjectFlashcards 
@@ -557,7 +607,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     const totalCards = getFilteredAndSortedFlashcards().length;
     const dueCards = dueFlashcards.length;
     
-    const message = `📚 My Flashcards\n\n📖 Total Cards: ${totalCards}\n🗂️ Due for Review: ${dueCards}\n📚 Learning: ${learningFlashcards.length}\n🔥 Study Streak: ${studyStreak} days\n\n#StudyBuddy #Flashcards`;
+    const message = `📚 My Flashcards\n\n📖 Total Cards: ${totalCards}\n🗂️ Not Reviewed Today: ${dueCards}\n📚 Learning: ${learningFlashcards.length}\n🔥 Study Streak: ${studyStreak} days\n\n#StudyBuddy #Flashcards`;
     
     try {
       await Share.share({
@@ -658,9 +708,9 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
 
   // Get difficulty color
   const getDifficultyColor = (difficulty: number) => {
-    if (difficulty <= 2) return '#10B981'; // Green
-    if (difficulty <= 3) return '#F59E0B'; // Amber
-    return '#EF4444'; // Red
+    if (difficulty <= 2) return '#10B981';
+    if (difficulty <= 3) return '#F59E0B';
+    return '#EF4444';
   };
 
   // Get subject color
@@ -692,7 +742,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     const reviewCount = typeof item.review_count === 'number' ? item.review_count : 0;
     const correctCount = typeof item.correct_count === 'number' ? item.correct_count : 0;
     const accuracy = reviewCount > 0 ? Math.round((correctCount / reviewCount) * 100) : 0;
-    const isDue = dueFlashcards.some(card => card.id === item.id);
+    const isDue = !wasReviewedToday(item); // Updated to use our new function
     
     return (
       <Animated.View
@@ -735,7 +785,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
               <View style={styles.flashcardBadges}>
                 {isDue && (
                   <View style={styles.dueBadge}>
-                    <Text style={styles.dueBadgeText}>Due</Text>
+                    <Text style={styles.dueBadgeText}>Not Reviewed</Text>
                   </View>
                 )}
               </View>
@@ -762,16 +812,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
               
               <View style={styles.flashcardStats}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statItemLabel}>Reviewed</Text>
-                  <Text style={styles.statItemValue}>{reviewCount} times</Text>
-                </View>
-                
-                <View style={styles.statItem}>
-                  <Text style={styles.statItemLabel}>Accuracy</Text>
-                  <Text style={styles.statItemValue}>{accuracy}%</Text>
-                </View>
-                
-                <View style={styles.statItem}>
                   <Text style={styles.statItemLabel}>Last reviewed</Text>
                   <Text style={styles.statItemValue}>
                     {item.last_reviewed ? formatDate(item.last_reviewed) : 'Never'}
@@ -794,7 +834,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   style={styles.cardReviewButton}
                   onPress={() => navigation.navigate('FlashcardReview', { 
                     subject: item.subject,
-                    flashcards: [item] // Start review with just this card
+                    flashcards: [item]
                   })}
                 >
                   <Text style={styles.cardReviewButtonText}>Review</Text>
@@ -815,7 +855,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 style={styles.actionButton}
                 onPress={() => navigation.navigate('FlashcardReview', { 
                   subject: item.subject,
-                  flashcards: [item] // Start review with just this card
+                  flashcards: [item]
                 })}
               >
                 <Text style={styles.actionButtonText}>Review</Text>
@@ -845,7 +885,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
       
-      {/* Header */}
       <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
         <View style={styles.headerTop}>
           <Text style={styles.title}>Flashcards</Text>
@@ -874,7 +913,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           </View>
         </View>
         
-        {/* Stats Cards */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Text style={styles.statCardValue}>{filteredFlashcards.length}</Text>
@@ -883,7 +921,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           
           <View style={styles.statCard}>
             <Text style={styles.statCardValue}>{dueFlashcards.length}</Text>
-            <Text style={styles.statCardLabel}>Due Today</Text>
+            <Text style={styles.statCardLabel}>Not Reviewed</Text>
           </View>
           
           <View style={styles.statCard}>
@@ -898,7 +936,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </View>
       </Animated.View>
 
-      {/* Subject Filter */}
       {subjects.length > 0 && (
         <Animated.View style={[styles.subjectFilter, { opacity: fadeAnim }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -944,7 +981,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </Animated.View>
       )}
 
-      {/* Search and Filter */}
       <Animated.View style={[styles.searchFilterContainer, { opacity: fadeAnim }]}>
         <View style={styles.searchContainer}>
           <TextInput
@@ -975,7 +1011,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Batch Actions */}
       {selectMode && (
         <Animated.View style={[styles.batchActionsContainer, { opacity: fadeAnim }]}>
           <View style={styles.batchActionsContent}>
@@ -1023,12 +1058,11 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </Animated.View>
       )}
 
-      {/* Due for Review */}
       {dueFlashcards.length > 0 && (
         <Animated.View style={[styles.dueContainer, { opacity: fadeAnim }]}>
           <View style={styles.dueContent}>
             <Text style={styles.dueTitle}>
-              {dueFlashcards.length} card{dueFlashcards.length !== 1 ? 's' : ''} due for review
+              {dueFlashcards.length} card{dueFlashcards.length !== 1 ? 's' : ''} not reviewed today
             </Text>
             <Text style={styles.dueSubtext}>
               Review now to strengthen your memory
@@ -1042,7 +1076,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </Animated.View>
       )}
 
-      {/* Flashcards List */}
       {filteredFlashcards.length > 0 ? (
         <FlatList
           data={filteredFlashcards}
@@ -1067,7 +1100,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </Animated.View>
       )}
 
-      {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setShowAddModal(true)}
@@ -1434,7 +1466,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         animationType="fade"
         transparent={true}
         visible={showOptimizeModal}
-        onRequestClose={() => setShowOptimizeModal(false)}
+        onRequestClose={() => !optimizing && setShowOptimizeModal(false)}
       >
         <TouchableOpacity
           style={styles.optimizeModalOverlay}
@@ -1443,25 +1475,34 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         >
           <View style={styles.optimizeModalContent}>
             <Text style={styles.optimizeModalTitle}>Optimize Study Schedule</Text>
-            <Text style={styles.optimizeModalText}>
-              AI will analyze your flashcard performance and optimize your review schedule for maximum retention.
-            </Text>
             
-            <View style={styles.optimizeModalActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowOptimizeModal(false)}
-                variant="outline"
-                style={styles.optimizeModalButton}
-                disabled={optimizing}
-              />
-              <Button
-                title="Optimize"
-                onPress={handleOptimizeStudySchedule}
-                loading={optimizing}
-                style={styles.optimizeModalButton}
-              />
-            </View>
+            {optimizing ? (
+              <View style={styles.optimizingContainer}>
+                <ActivityIndicator size="large" color="#6366F1" />
+                <Text style={styles.optimizingText}>Optimizing your schedule...</Text>
+                <Text style={styles.optimizingSubtext}>AI is analyzing your flashcards</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.optimizeModalText}>
+                  AI will analyze your flashcard performance and optimize your review schedule for maximum retention.
+                </Text>
+                
+                <View style={styles.optimizeModalActions}>
+                  <Button
+                    title="Cancel"
+                    onPress={() => setShowOptimizeModal(false)}
+                    variant="outline"
+                    style={styles.optimizeModalButton}
+                  />
+                  <Button
+                    title="Optimize"
+                    onPress={handleOptimizeStudySchedule}
+                    style={styles.optimizeModalButton}
+                  />
+                </View>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -2197,6 +2238,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
+  },
+  optimizingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  optimizingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginTop: 16,
+  },
+  optimizingSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 8,
   },
   optimizeModalActions: {
     flexDirection: 'row',
