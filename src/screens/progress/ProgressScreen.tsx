@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\screens\progress\ProgressScreen.tsx
 // ============================================
 // PROGRESS SCREEN WITH REAL-TIME TRACKING
-// Progress tracking with charts and real-time session updates
+// Beautiful progress tracking with charts and real-time session updates
 // ============================================
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -15,6 +15,7 @@ import {
   Modal,
   RefreshControl,
   Platform,
+  Animated,
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
@@ -54,6 +55,10 @@ export const ProgressScreen = ({ navigation }: any) => {
   const [showAllSubjects, setShowAllSubjects] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
   
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  
   // Set up timer for real-time updates
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -68,6 +73,22 @@ export const ProgressScreen = ({ navigation }: any) => {
       }
     };
   }, [updateDuration]);
+
+  // Animate components on mount
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   // Helper function to check if a card was reviewed today
   const wasReviewedToday = (card: Flashcard): boolean => {
@@ -237,21 +258,41 @@ export const ProgressScreen = ({ navigation }: any) => {
 
   return (
     <View style={styles.container}>
+      {/* Beautiful Header */}
+      <View style={styles.headerContainer}>
+        <View style={styles.headerBackground} />
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Your Progress</Text>
+          <Text style={styles.subtitle}>Track your learning journey</Text>
+        </View>
+      </View>
+
       {/* Active Session Banner */}
       {activeSession && activeSession.isRunning && (
-        <View style={styles.activeSessionBanner}>
+        <Animated.View 
+          style={[
+            styles.activeSessionBanner,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
           <View style={styles.activeSessionContent}>
-            <Text style={styles.activeSessionTitle}>Currently Studying</Text>
-            <Text style={styles.activeSessionSubject}>{activeSession.subject}</Text>
-            <Text style={styles.activeSessionTimer}>{formatTime(activeSession.duration)}</Text>
-            
-            {activeSession.type === 'flashcards' && (
-              <View style={styles.flashcardStats}>
-                <Text style={styles.flashcardStatsText}>
-                  Reviewed: {todayFlashcardReviews} | Correct: {todayCorrectAnswers} | Accuracy: {getFlashcardAccuracy()}%
-                </Text>
-              </View>
-            )}
+            <View style={styles.activeSessionIndicator} />
+            <View style={styles.activeSessionInfo}>
+              <Text style={styles.activeSessionTitle}>Currently Studying</Text>
+              <Text style={styles.activeSessionSubject}>{activeSession.subject}</Text>
+              <Text style={styles.activeSessionTimer}>{formatTime(activeSession.duration)}</Text>
+              
+              {activeSession.type === 'flashcards' && (
+                <View style={styles.flashcardStats}>
+                  <Text style={styles.flashcardStatsText}>
+                    Reviewed: {todayFlashcardReviews} | Correct: {todayCorrectAnswers} | Accuracy: {getFlashcardAccuracy()}%
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
           <TouchableOpacity
             style={styles.activeSessionButton}
@@ -259,7 +300,7 @@ export const ProgressScreen = ({ navigation }: any) => {
           >
             <Text style={styles.activeSessionButtonText}>View</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       )}
       
       <ScrollView 
@@ -273,15 +314,14 @@ export const ProgressScreen = ({ navigation }: any) => {
             tintColor="#6366F1" // iOS color for the refresh indicator
           />
         }
+        showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Your Progress</Text>
-        </View>
-
         {/* Overall Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
+            <View style={styles.statIcon}>
+              <Text style={styles.statIconText}>⏱️</Text>
+            </View>
             <Text style={styles.statValue}>
               {activeSession && activeSession.isRunning
                 ? formatTime(activeSession.duration)
@@ -294,11 +334,17 @@ export const ProgressScreen = ({ navigation }: any) => {
           </View>
           
           <View style={styles.statCard}>
+            <View style={styles.statIcon}>
+              <Text style={styles.statIconText}>📚</Text>
+            </View>
             <Text style={styles.statValue}>{getTotalSessions()}</Text>
             <Text style={styles.statLabel}>Total Sessions</Text>
           </View>
           
           <View style={styles.statCard}>
+            <View style={styles.statIcon}>
+              <Text style={styles.statIconText}>🎯</Text>
+            </View>
             <Text style={styles.statValue}>{getAverageAccuracy()}%</Text>
             <Text style={styles.statLabel}>Avg. Accuracy</Text>
           </View>
@@ -306,7 +352,12 @@ export const ProgressScreen = ({ navigation }: any) => {
 
         {/* Flashcard Stats */}
         <View style={styles.flashcardStatsContainer}>
-          <Text style={styles.flashcardStatsTitle}>Today's Flashcard Progress</Text>
+          <View style={styles.flashcardStatsHeader}>
+            <Text style={styles.flashcardStatsTitle}>Today's Flashcard Progress</Text>
+            <View style={styles.flashcardStatsIcon}>
+              <Text style={styles.flashcardStatsIconText}>🃏</Text>
+            </View>
+          </View>
           
           <View style={styles.flashcardStatsGrid}>
             <View style={styles.flashcardStatItem}>
@@ -373,9 +424,14 @@ export const ProgressScreen = ({ navigation }: any) => {
 
         {/* Progress Chart with Study Hours Data */}
         {subjectProgress.length > 0 ? (
-          <ProgressChart data={getChartData()} type={chartType} />
+          <View style={styles.chartContainer}>
+            <ProgressChart data={getChartData()} type={chartType} />
+          </View>
         ) : (
           <View style={styles.emptyChartContainer}>
+            <View style={styles.emptyIcon}>
+              <Text style={styles.emptyIconText}>📊</Text>
+            </View>
             <Text style={styles.emptyText}>No data to display</Text>
             <Text style={styles.emptySubtext}>Start studying to see your progress chart</Text>
           </View>
@@ -397,13 +453,18 @@ export const ProgressScreen = ({ navigation }: any) => {
             getDisplayedSubjects().map((subject, index) => (
               <View key={subject.subject} style={styles.subjectItem}>
                 <View style={styles.subjectItemHeader}>
-                  <Text style={styles.subjectItemName}>{subject.subject}</Text>
-                  <Text style={styles.subjectItemTime}>
-                    {activeSession?.subject === subject.subject && activeSession.isRunning
-                      ? formatTime(activeSession.duration)
-                      : formatStudyTime(subject.total_minutes)
-                    }
-                  </Text>
+                  <View style={styles.subjectItemInfo}>
+                    <Text style={styles.subjectItemName}>{subject.subject}</Text>
+                    <Text style={styles.subjectItemTime}>
+                      {activeSession?.subject === subject.subject && activeSession.isRunning
+                        ? formatTime(activeSession.duration)
+                        : formatStudyTime(subject.total_minutes)
+                      }
+                    </Text>
+                  </View>
+                  <View style={styles.subjectItemIcon}>
+                    <Text style={styles.subjectItemIconText}>📖</Text>
+                  </View>
                 </View>
                 <View style={styles.subjectProgressBar}>
                   <View 
@@ -417,21 +478,24 @@ export const ProgressScreen = ({ navigation }: any) => {
                   />
                 </View>
                 <View style={styles.subjectItemStats}>
-                  <Text style={styles.subjectItemStat}>
-                    {subject.session_count} sessions
-                  </Text>
-                  <Text style={styles.subjectItemStat}>
-                    {subject.flashcard_count} cards
-                  </Text>
-                  <Text style={styles.subjectItemStat}>
-                    {subject.accuracy_rate}% accuracy
-                  </Text>
-                  {activeSession?.subject === subject.subject && activeSession.isRunning && (
-                    <Text style={styles.currentlyStudyingStat}>
-                      • Currently studying
-                    </Text>
-                  )}
+                  <View style={styles.subjectItemStat}>
+                    <Text style={styles.subjectItemStatValue}>{subject.session_count}</Text>
+                    <Text style={styles.subjectItemStatLabel}>sessions</Text>
+                  </View>
+                  <View style={styles.subjectItemStat}>
+                    <Text style={styles.subjectItemStatValue}>{subject.flashcard_count}</Text>
+                    <Text style={styles.subjectItemStatLabel}>cards</Text>
+                  </View>
+                  <View style={styles.subjectItemStat}>
+                    <Text style={styles.subjectItemStatValue}>{subject.accuracy_rate}%</Text>
+                    <Text style={styles.subjectItemStatLabel}>accuracy</Text>
+                  </View>
                 </View>
+                {activeSession?.subject === subject.subject && activeSession.isRunning && (
+                  <View style={styles.currentlyStudyingBadge}>
+                    <Text style={styles.currentlyStudyingText}>• Currently studying</Text>
+                  </View>
+                )}
                 <View style={styles.subjectItemActions}>
                   <TouchableOpacity
                     style={styles.subjectItemButton}
@@ -444,6 +508,9 @@ export const ProgressScreen = ({ navigation }: any) => {
             ))
           ) : (
             <View style={styles.emptyContainer}>
+              <View style={styles.emptyIcon}>
+                <Text style={styles.emptyIconText}>📚</Text>
+              </View>
               <Text style={styles.emptyText}>No progress data available</Text>
               <Text style={styles.emptySubtext}>Start studying to see your progress here</Text>
             </View>
@@ -468,8 +535,8 @@ export const ProgressScreen = ({ navigation }: any) => {
                 <View style={styles.sessionHeader}>
                   <View style={styles.sessionSubjectContainer}>
                     <Text style={styles.sessionSubject}>{session.subject}</Text>
-                    <View style={styles.sessionTypeBadge}>
-                      <Text style={styles.sessionTypeText}>
+                    <View style={[styles.sessionTypeBadge, { backgroundColor: SUBJECT_COLORS[index % SUBJECT_COLORS.length] + '20' }]}>
+                      <Text style={[styles.sessionTypeText, { color: SUBJECT_COLORS[index % SUBJECT_COLORS.length] }]}>
                         {session.session_type.replace('_', ' ')}
                       </Text>
                     </View>
@@ -503,6 +570,9 @@ export const ProgressScreen = ({ navigation }: any) => {
             ))
           ) : (
             <View style={styles.emptyContainer}>
+              <View style={styles.emptyIcon}>
+                <Text style={styles.emptyIconText}>📝</Text>
+              </View>
               <Text style={styles.emptyText}>No study sessions yet</Text>
               <Text style={styles.emptySubtext}>Start studying to see your sessions here</Text>
             </View>
@@ -531,6 +601,9 @@ export const ProgressScreen = ({ navigation }: any) => {
             {selectedSubject && (
               <ScrollView style={styles.modalScroll}>
                 <View style={styles.subjectDetailHeader}>
+                  <View style={styles.subjectDetailIcon}>
+                    <Text style={styles.subjectDetailIconText}>📚</Text>
+                  </View>
                   <Text style={styles.subjectDetailName}>{selectedSubject}</Text>
                 </View>
                 
@@ -607,30 +680,89 @@ export const ProgressScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F8FAFC',
   },
+  // Beautiful Header
+  headerContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  headerBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+    backgroundColor: '#6366F1',
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  headerContent: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  // Active Session Banner
   activeSessionBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: -10,
+    borderRadius: 16,
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.1)',
   },
   activeSessionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  activeSessionIndicator: {
+    width: 4,
+    height: 40,
+    backgroundColor: '#10B981',
+    borderRadius: 2,
+    marginRight: 12,
+  },
+  activeSessionInfo: {
     flex: 1,
   },
   activeSessionTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#6366F1',
+    color: '#10B981',
     marginBottom: 4,
   },
   activeSessionSubject: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#1E293B',
     marginBottom: 4,
   },
   activeSessionTimer: {
@@ -643,7 +775,7 @@ const styles = StyleSheet.create({
   },
   flashcardStatsText: {
     fontSize: 12,
-    color: '#6366F1',
+    color: '#64748B',
   },
   activeSessionButton: {
     backgroundColor: '#6366F1',
@@ -660,17 +792,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20, // Extra padding for iOS to account for safe area
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
+  // Stats Container
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -679,17 +804,29 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     alignItems: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  statIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statIconText: {
+    fontSize: 24,
   },
   statValue: {
     fontSize: 22,
@@ -699,28 +836,45 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 11,
-    color: '#6B7280',
+    color: '#64748B',
     textAlign: 'center',
+    fontWeight: '500',
   },
+  // Flashcard Stats
   flashcardStatsContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  flashcardStatsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   flashcardStatsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
-    textAlign: 'center',
+    color: '#1E293B',
+  },
+  flashcardStatsIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  flashcardStatsIconText: {
+    fontSize: 20,
   },
   flashcardStatsGrid: {
     flexDirection: 'row',
@@ -729,11 +883,13 @@ const styles = StyleSheet.create({
   },
   flashcardStatItem: {
     width: '48%',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
     padding: 16,
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   flashcardStatValue: {
     fontSize: 24,
@@ -743,9 +899,11 @@ const styles = StyleSheet.create({
   },
   flashcardStatLabel: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#64748B',
     textAlign: 'center',
+    fontWeight: '500',
   },
+  // Chart Type
   chartTypeContainer: {
     marginBottom: 16,
   },
@@ -758,7 +916,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#1E293B',
   },
   viewAllButton: {
     fontSize: 14,
@@ -773,9 +931,9 @@ const styles = StyleSheet.create({
   chartTypeButton: {
     paddingHorizontal: 30,
     paddingVertical: 10,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     borderRadius: 20,
     marginHorizontal: 10,
   },
@@ -786,45 +944,59 @@ const styles = StyleSheet.create({
   chartTypeButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
   selectedChartTypeButtonText: {
     color: '#FFFFFF',
   },
+  chartContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.1)',
+  },
   emptyChartContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 40,
     alignItems: 'center',
     marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: 'rgba(99, 102, 241, 0.1)',
   },
+  // Subject Progress
   subjectsContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: 'rgba(99, 102, 241, 0.1)',
   },
   subjectItem: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#6366F1',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   subjectItemHeader: {
     flexDirection: 'row',
@@ -832,20 +1004,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  subjectItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+  subjectItemInfo: {
     flex: 1,
+  },
+  subjectItemName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 4,
   },
   subjectItemTime: {
     fontSize: 14,
     color: '#6366F1',
     fontWeight: '600',
   },
+  subjectItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subjectItemIconText: {
+    fontSize: 20,
+  },
   subjectProgressBar: {
     height: 8,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
     borderRadius: 4,
     marginBottom: 12,
     overflow: 'hidden',
@@ -856,16 +1042,31 @@ const styles = StyleSheet.create({
   },
   subjectItemStats: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   subjectItemStat: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginRight: 12,
-    marginBottom: 4,
+    alignItems: 'center',
   },
-  currentlyStudyingStat: {
+  subjectItemStatValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  subjectItemStatLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  currentlyStudyingBadge: {
+    backgroundColor: '#10B98120',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  currentlyStudyingText: {
     fontSize: 12,
     color: '#10B981',
     fontWeight: '600',
@@ -877,34 +1078,35 @@ const styles = StyleSheet.create({
   subjectItemButton: {
     backgroundColor: '#6366F1',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   subjectItemButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  // Sessions
   sessionsContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: 'rgba(99, 102, 241, 0.1)',
   },
   sessionCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#6366F1',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   sessionHeader: {
     flexDirection: 'row',
@@ -919,12 +1121,11 @@ const styles = StyleSheet.create({
   },
   sessionSubject: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: 'bold',
+    color: '#1E293B',
     marginRight: 8,
   },
   sessionTypeBadge: {
-    backgroundColor: '#EEF2FF',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -932,7 +1133,6 @@ const styles = StyleSheet.create({
   sessionTypeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#6366F1',
     textTransform: 'capitalize',
   },
   sessionDuration: {
@@ -947,7 +1147,7 @@ const styles = StyleSheet.create({
   },
   sessionDate: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#64748B',
   },
   sessionProgress: {
     flex: 1,
@@ -955,7 +1155,7 @@ const styles = StyleSheet.create({
   },
   sessionProgressBar: {
     height: 6,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E2E8F0',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -963,24 +1163,38 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
+  // Empty States
   emptyContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
     padding: 32,
     alignItems: 'center',
+  },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyIconText: {
+    fontSize: 32,
   },
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#94A3B8',
     textAlign: 'center',
   },
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1009,24 +1223,36 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: '#F1F5F9',
   },
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#1E293B',
   },
   closeButton: {
     fontSize: 28,
-    color: '#6B7280',
+    color: '#64748B',
     fontWeight: '300',
   },
   subjectDetailHeader: {
     alignItems: 'center',
     marginBottom: 24,
     paddingVertical: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+  },
+  subjectDetailIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  subjectDetailIconText: {
+    fontSize: 32,
   },
   subjectDetailName: {
     fontSize: 22,
@@ -1042,19 +1268,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
     marginBottom: 8,
   },
   subjectDetailStatLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
     fontWeight: '500',
   },
   subjectDetailStatValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#1E293B',
   },
   subjectDetailActions: {
     marginTop: 8,
