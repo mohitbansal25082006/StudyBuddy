@@ -14,7 +14,8 @@ import {
   TouchableOpacity,
   StatusBar,
   Image,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -33,12 +34,11 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [flashcards, setFlashcards] = useState<FlashcardType[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [sessionTime, setSessionTime] = useState(0);
-  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
-  const [flipAnimation, setFlipAnimation] = useState(new Animated.Value(0));
-  const [progressAnimation, setProgressAnimation] = useState(new Animated.Value(0));
   const [isFlipped, setIsFlipped] = useState(false);
   const [reviewResults, setReviewResults] = useState<{[key: string]: 'correct' | 'incorrect'}>({});
+  
+  const flipAnimation = useRef(new Animated.Value(0)).current;
+  const progressAnimation = useRef(new Animated.Value(0)).current;
   
   // Load flashcards for review
   useEffect(() => {
@@ -66,12 +66,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         if (!activeSession || activeSession.type !== 'flashcards') {
           startSession(subject || 'Mixed', 'flashcards');
         }
-        
-        // Start timer
-        const interval = setInterval(() => {
-          setSessionTime(prev => prev + 1);
-        }, 1000);
-        setTimerInterval(interval);
       } catch (error) {
         console.error('Error loading flashcards:', error);
         navigation.goBack();
@@ -81,13 +75,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     };
 
     loadFlashcards();
-    
-    // Cleanup timer on unmount
-    return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-      }
-    };
   }, [user, subject, navigation, startSession, activeSession, passedFlashcards]);
   
   // Update progress animation
@@ -102,17 +89,28 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     }
   }, [currentCardIndex, flashcards.length]);
 
+  // Reset flip state when card changes
+  useEffect(() => {
+    setIsFlipped(false);
+    flipAnimation.setValue(0);
+  }, [currentCardIndex]);
+
   // Handle card flip
   const handleFlipCard = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     
-    setIsFlipped(!isFlipped);
+    const toValue = isFlipped ? 0 : 1;
     
-    Animated.timing(flipAnimation, {
-      toValue: isFlipped ? 0 : 1,
-      duration: 300,
+    Animated.spring(flipAnimation, {
+      toValue,
+      friction: 8,
+      tension: 10,
       useNativeDriver: true,
     }).start();
+    
+    setIsFlipped(!isFlipped);
   };
 
   // Handle card rating
@@ -173,14 +171,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
       
       // Move to next card
       if (currentCardIndex < flashcards.length - 1) {
-        // Reset flip animation
-        setIsFlipped(false);
-        Animated.timing(flipAnimation, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-        
         setCurrentCardIndex(currentCardIndex + 1);
       } else {
         // Review complete
@@ -195,14 +185,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   // Handle next card
   const handleNextCard = () => {
     if (currentCardIndex < flashcards.length - 1) {
-      // Reset flip animation
-      setIsFlipped(false);
-      Animated.timing(flipAnimation, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      
       setCurrentCardIndex(currentCardIndex + 1);
     } else {
       // Review complete
@@ -213,14 +195,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   // Handle previous card
   const handlePreviousCard = () => {
     if (currentCardIndex > 0) {
-      // Reset flip animation
-      setIsFlipped(false);
-      Animated.timing(flipAnimation, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      
       setCurrentCardIndex(currentCardIndex - 1);
     }
   };
@@ -231,12 +205,6 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     const totalReviewed = Object.keys(reviewResults).length;
     const correctCount = Object.values(reviewResults).filter(result => result === 'correct').length;
     const accuracy = totalReviewed > 0 ? Math.round((correctCount / totalReviewed) * 100) : 0;
-    
-    // Stop timer
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
     
     // Stop the session in the store
     stopSession();
@@ -254,23 +222,28 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     );
   };
 
-  // Format time
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  // Interpolate flip animation for smooth 3D flip
+  const frontAnimatedStyle = {
+    transform: [
+      {
+        rotateY: flipAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['0deg', '180deg'],
+        }),
+      },
+    ],
   };
 
-  // Interpolate flip animation
-  const frontInterpolate = flipAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
-  });
-
-  const backInterpolate = flipAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['180deg', '0deg'],
-  });
+  const backAnimatedStyle = {
+    transform: [
+      {
+        rotateY: flipAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['180deg', '360deg'],
+        }),
+      },
+    ],
+  };
 
   if (loading) {
     return <LoadingSpinner message="Loading flashcards..." />;
@@ -336,81 +309,91 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
             ]} 
           />
         </View>
-        
-        {/* Timer */}
-        <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>⏱️ {formatTime(sessionTime)}</Text>
-        </View>
       </View>
       
       {/* Flashcard */}
       <View style={styles.flashcardContainer}>
-        <Animated.View
-          style={[
-            styles.flashcard,
-            {
-              transform: [{ rotateY: frontInterpolate }],
-            }
-          ]}
+        <TouchableOpacity 
+          activeOpacity={0.9} 
+          onPress={handleFlipCard}
+          style={styles.cardTouchable}
         >
-          <View style={styles.flashcardContent}>
-            <Text style={styles.flashcardLabel}>Question</Text>
-            <Text style={styles.flashcardText}>{currentCard.question}</Text>
-            
-            {currentCard.image_url && (
-              <Image source={{ uri: currentCard.image_url }} style={styles.flashcardImage} />
-            )}
-            
-            <TouchableOpacity style={styles.flipButton} onPress={handleFlipCard}>
-              <Text style={styles.flipButtonText}>Flip Card</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-        
-        <Animated.View
-          style={[
-            styles.flashcard,
-            styles.flashcardBack,
-            {
-              transform: [{ rotateY: backInterpolate }],
-            }
-          ]}
-        >
-          <View style={styles.flashcardContent}>
-            <Text style={styles.flashcardLabel}>Answer</Text>
-            <Text style={styles.flashcardText}>{currentCard.answer}</Text>
-            
-            <View style={styles.ratingContainer}>
-              <Text style={styles.ratingLabel}>How well did you know this?</Text>
-              <View style={styles.ratingButtons}>
-                <TouchableOpacity
-                  style={[styles.ratingButton, styles.easyButton]}
-                  onPress={() => handleRateCard('easy')}
-                >
-                  <Text style={styles.ratingButtonText}>Easy</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.ratingButton, styles.mediumButton]}
-                  onPress={() => handleRateCard('medium')}
-                >
-                  <Text style={styles.ratingButtonText}>Medium</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.ratingButton, styles.hardButton]}
-                  onPress={() => handleRateCard('hard')}
-                >
-                  <Text style={styles.ratingButtonText}>Hard</Text>
-                </TouchableOpacity>
+          {/* Front of Card */}
+          <Animated.View
+            style={[
+              styles.flashcard,
+              frontAnimatedStyle,
+              { opacity: isFlipped ? 0 : 1 }
+            ]}
+            pointerEvents={isFlipped ? 'none' : 'auto'}
+          >
+            <View style={styles.flashcardContent}>
+              <Text style={styles.flashcardLabel}>Question</Text>
+              <View style={styles.flashcardTextContainer}>
+                <Text style={styles.flashcardText}>{currentCard.question}</Text>
+              </View>
+              
+              {currentCard.image_url && (
+                <Image source={{ uri: currentCard.image_url }} style={styles.flashcardImage} />
+              )}
+              
+              <View style={styles.flipHintContainer}>
+                <Text style={styles.flipHintText}>Tap to reveal answer</Text>
               </View>
             </View>
-            
-            <TouchableOpacity style={styles.flipButton} onPress={handleFlipCard}>
-              <Text style={styles.flipButtonText}>Flip Card</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+          </Animated.View>
+          
+          {/* Back of Card */}
+          <Animated.View
+            style={[
+              styles.flashcard,
+              styles.flashcardBack,
+              backAnimatedStyle,
+              { opacity: isFlipped ? 1 : 0 }
+            ]}
+            pointerEvents={isFlipped ? 'auto' : 'none'}
+          >
+            <View style={styles.flashcardContent}>
+              <Text style={styles.flashcardLabel}>Answer</Text>
+              <View style={styles.flashcardTextContainer}>
+                <Text style={styles.flashcardText}>{currentCard.answer}</Text>
+              </View>
+              
+              <View style={styles.ratingContainer}>
+                <Text style={styles.ratingLabel}>How well did you know this?</Text>
+                <View style={styles.ratingButtons}>
+                  <TouchableOpacity
+                    style={[styles.ratingButton, styles.hardButton]}
+                    onPress={() => handleRateCard('hard')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.ratingButtonText}>Hard</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.ratingButton, styles.mediumButton]}
+                    onPress={() => handleRateCard('medium')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.ratingButtonText}>Medium</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.ratingButton, styles.easyButton]}
+                    onPress={() => handleRateCard('easy')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.ratingButtonText}>Easy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              <View style={styles.flipHintContainer}>
+                <Text style={styles.flipHintText}>Tap to see question</Text>
+              </View>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
       </View>
       
       {/* Navigation Buttons */}
@@ -422,6 +405,7 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
           ]}
           onPress={handlePreviousCard}
           disabled={currentCardIndex === 0}
+          activeOpacity={0.7}
         >
           <Text style={styles.navButtonText}>Previous</Text>
         </TouchableOpacity>
@@ -429,6 +413,7 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         <TouchableOpacity
           style={styles.navButton}
           onPress={handleNextCard}
+          activeOpacity={0.7}
         >
           <Text style={styles.navButtonText}>
             {currentCardIndex === flashcards.length - 1 ? 'Finish' : 'Next'}
@@ -446,7 +431,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#6366F1',
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
@@ -467,6 +452,7 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 18,
     color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   headerCenter: {
     alignItems: 'center',
@@ -480,6 +466,7 @@ const styles = StyleSheet.create({
   progress: {
     fontSize: 16,
     color: '#FFFFFF',
+    opacity: 0.9,
   },
   placeholder: {
     width: 40,
@@ -488,19 +475,11 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 2,
-    marginBottom: 8,
   },
   progressBar: {
     height: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 2,
-  },
-  timerContainer: {
-    alignItems: 'center',
-  },
-  timerText: {
-    fontSize: 14,
-    color: '#FFFFFF',
   },
   flashcardContainer: {
     flex: 1,
@@ -508,9 +487,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  flashcard: {
+  cardTouchable: {
     width: width * 0.9,
     height: height * 0.6,
+  },
+  flashcard: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
@@ -523,8 +507,6 @@ const styles = StyleSheet.create({
   },
   flashcardBack: {
     position: 'absolute',
-    top: 0,
-    left: 0,
   },
   flashcardContent: {
     flex: 1,
@@ -536,35 +518,39 @@ const styles = StyleSheet.create({
     color: '#6366F1',
     marginBottom: 16,
     textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  flashcardTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   flashcardText: {
-    fontSize: 18,
+    fontSize: 20,
     color: '#111827',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 16,
+    lineHeight: 28,
+    fontWeight: '500',
   },
   flashcardImage: {
     width: '100%',
     height: 150,
     borderRadius: 8,
-    marginBottom: 16,
+    marginVertical: 16,
     resizeMode: 'cover',
   },
-  flipButton: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
+  flipHintContainer: {
     alignItems: 'center',
+    paddingVertical: 12,
   },
-  flipButtonText: {
+  flipHintText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#6366F1',
+    color: '#9CA3AF',
+    fontStyle: 'italic',
   },
   ratingContainer: {
-    marginBottom: 16,
+    marginBottom: 8,
   },
   ratingLabel: {
     fontSize: 16,
@@ -576,12 +562,14 @@ const styles = StyleSheet.create({
   ratingButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 8,
   },
   ratingButton: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     marginHorizontal: 4,
   },
   easyButton: {
@@ -602,15 +590,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    gap: 12,
   },
   navButton: {
     backgroundColor: '#6366F1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
     borderRadius: 8,
-    minWidth: 100,
+    minWidth: 120,
     alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
   },
   disabledButton: {
     backgroundColor: '#D1D5DB',
@@ -625,9 +616,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#F9FAFB',
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
     color: '#111827',
     marginBottom: 8,
@@ -639,11 +631,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 40,
     marginBottom: 24,
+    lineHeight: 20,
   },
   emptyButton: {
     backgroundColor: '#6366F1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
     borderRadius: 8,
   },
   emptyButtonText: {
