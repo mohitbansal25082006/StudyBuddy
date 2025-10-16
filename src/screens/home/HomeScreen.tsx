@@ -25,7 +25,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getCalendarEvents, getStudySessions, getFlashcardsForReview, getSubjectProgress } from '../../services/supabase';
+import { getCalendarEvents, getStudySessions, getFlashcards, getSubjectProgress } from '../../services/supabase';
 import { CalendarEvent, StudySession, Flashcard, SubjectProgress } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { Button } from '../../components/Button';
@@ -68,7 +68,8 @@ export const HomeScreen = ({ navigation }: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
-  const [dueFlashcards, setDueFlashcards] = useState<Flashcard[]>([]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [notReviewedToday, setNotReviewedToday] = useState<Flashcard[]>([]);
   const [todayStudyTime, setTodayStudyTime] = useState(0);
   const [weeklyGoal, setWeeklyGoal] = useState(300); // 5 hours default
   const [weeklyProgress, setWeeklyProgress] = useState(0);
@@ -103,6 +104,21 @@ export const HomeScreen = ({ navigation }: any) => {
     };
   }, [updateDuration]);
 
+  // Helper function to check if a card was reviewed today
+  const wasReviewedToday = (card: Flashcard): boolean => {
+    if (!card.last_reviewed) return false;
+    
+    const lastReviewed = new Date(card.last_reviewed);
+    const today = new Date();
+    
+    // Check if the card was reviewed today (same day)
+    return (
+      lastReviewed.getFullYear() === today.getFullYear() &&
+      lastReviewed.getMonth() === today.getMonth() &&
+      lastReviewed.getDate() === today.getDate()
+    );
+  };
+
   // Load data
   const loadData = async () => {
     if (!user) return;
@@ -128,9 +144,14 @@ export const HomeScreen = ({ navigation }: any) => {
       const sessions = await getStudySessions(user.id, 10);
       setRecentSessions(sessions);
       
-      // Get flashcards due for review
-      const flashcards = await getFlashcardsForReview(user.id);
-      setDueFlashcards(flashcards);
+      // Get all flashcards
+      const allFlashcards = await getFlashcards(user.id);
+      setFlashcards(allFlashcards);
+      
+      // Filter flashcards that haven't been reviewed today
+      const userFlashcards = allFlashcards.filter(card => card.user_id === user.id);
+      const notReviewed = userFlashcards.filter(card => !wasReviewedToday(card));
+      setNotReviewedToday(notReviewed);
       
       // Get subject progress
       const progress = await getSubjectProgress(user.id);
@@ -266,7 +287,7 @@ export const HomeScreen = ({ navigation }: any) => {
     const totalHours = Math.floor(weeklyProgress / 60);
     const totalMins = weeklyProgress % 60;
     
-    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${activeSession && activeSession.isRunning ? formatTime(activeSession.duration) : formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards to Review: ${dueFlashcards.length}\n📝 Flashcards Reviewed: ${todayFlashcardReviews}\n✅ Correct Answers: ${todayCorrectAnswers}\n❌ Incorrect Answers: ${todayIncorrectAnswers}\n\n#StudyBuddy #LearningProgress`;
+    const message = `📚 StudyBuddy Progress\n\n🔥 Study Streak: ${studyStreak} days\n⏰ Today's Study: ${activeSession && activeSession.isRunning ? formatTime(activeSession.duration) : formatStudyTime(todayStudyTime)}\n📊 Weekly Progress: ${totalHours}h ${totalMins}m\n📖 Subjects: ${subjectProgress.length}\n🗂️ Cards Not Reviewed Today: ${notReviewedToday.length}\n📝 Flashcards Reviewed: ${todayFlashcardReviews}\n✅ Correct Answers: ${todayCorrectAnswers}\n❌ Incorrect Answers: ${todayIncorrectAnswers}\n\n#StudyBuddy #LearningProgress`;
     
     try {
       await Share.share({
@@ -479,8 +500,8 @@ export const HomeScreen = ({ navigation }: any) => {
           </View>
           
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{dueFlashcards.length}</Text>
-            <Text style={styles.statLabel}>Cards to Review</Text>
+            <Text style={styles.statValue}>{notReviewedToday.length}</Text>
+            <Text style={styles.statLabel}>Cards Not Reviewed Today</Text>
           </View>
           
           <View style={styles.statCard}>
@@ -515,15 +536,6 @@ export const HomeScreen = ({ navigation }: any) => {
                 <Text style={styles.flashcardStatLabel}>Incorrect</Text>
               </View>
             </View>
-            
-            {activeSession?.type === 'flashcards' && (
-              <TouchableOpacity
-                style={styles.continueReviewButton}
-                onPress={() => navigation.navigate('FlashcardReview')}
-              >
-                <Text style={styles.continueReviewButtonText}>Continue Review</Text>
-              </TouchableOpacity>
-            )}
           </Animated.View>
         )}
 
@@ -1133,18 +1145,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
-  },
-  continueReviewButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  continueReviewButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
   weeklyGoalContainer: {
     backgroundColor: '#FFFFFF',

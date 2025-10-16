@@ -12,13 +12,14 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   Dimensions, 
-  Modal 
+  Modal,
+  FlatList
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getSubjectProgress, getStudySessions, getFlashcardsForReview } from '../../services/supabase';
-import { SubjectProgress, StudySession } from '../../types';
+import { getSubjectProgress, getStudySessions, getFlashcards } from '../../services/supabase';
+import { SubjectProgress, StudySession, Flashcard } from '../../types';
 import { ProgressChart } from '../../components/ProgressChart';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -32,8 +33,9 @@ export const ProgressScreen = ({ navigation }: any) => {
   const [loading, setLoading] = useState(true);
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
-  const [dueFlashcards, setDueFlashcards] = useState(0);
-  const [masteredFlashcards, setMasteredFlashcards] = useState(0);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [notReviewedToday, setNotReviewedToday] = useState<Flashcard[]>([]);
+  const [reviewedToday, setReviewedToday] = useState<Flashcard[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   
@@ -52,6 +54,21 @@ export const ProgressScreen = ({ navigation }: any) => {
     };
   }, [updateDuration]);
 
+  // Helper function to check if a card was reviewed today
+  const wasReviewedToday = (card: Flashcard): boolean => {
+    if (!card.last_reviewed) return false;
+    
+    const lastReviewed = new Date(card.last_reviewed);
+    const today = new Date();
+    
+    // Check if the card was reviewed today (same day)
+    return (
+      lastReviewed.getFullYear() === today.getFullYear() &&
+      lastReviewed.getMonth() === today.getMonth() &&
+      lastReviewed.getDate() === today.getDate()
+    );
+  };
+
   // Load data
   useEffect(() => {
     const loadData = async () => {
@@ -64,15 +81,17 @@ export const ProgressScreen = ({ navigation }: any) => {
         const sessions = await getStudySessions(user.id, 10);
         setRecentSessions(sessions);
         
-        // Get flashcard stats
-        const flashcards = await getFlashcardsForReview(user.id);
-        setDueFlashcards(flashcards.length);
+        // Get all flashcards
+        const allFlashcards = await getFlashcards(user.id);
+        setFlashcards(allFlashcards);
         
-        // Calculate mastered flashcards
-        const mastered = subjectProgress.reduce((total, subject) => {
-          return total + Math.floor(subject.flashcard_count * (subject.accuracy_rate / 100));
-        }, 0);
-        setMasteredFlashcards(mastered);
+        // Filter flashcards based on review status
+        const userFlashcards = allFlashcards.filter(card => card.user_id === user.id);
+        const notReviewed = userFlashcards.filter(card => !wasReviewedToday(card));
+        const reviewed = userFlashcards.filter(card => wasReviewedToday(card));
+        
+        setNotReviewedToday(notReviewed);
+        setReviewedToday(reviewed);
       } catch (error) {
         console.error('Error loading progress data:', error);
       } finally {
@@ -140,9 +159,17 @@ export const ProgressScreen = ({ navigation }: any) => {
     setShowSubjectModal(true);
   };
 
-  // Handle starting flashcard review
-  const handleStartReview = () => {
-    navigation.navigate('FlashcardReview', { subject: selectedSubject });
+  // Handle viewing flashcards
+  const handleViewFlashcards = () => {
+    // Close the modal first
+    setShowSubjectModal(false);
+    
+    // Then navigate to flashcards
+    if (selectedSubject) {
+      navigation.navigate('Flashcards', { subject: selectedSubject });
+    } else {
+      navigation.navigate('Flashcards');
+    }
   };
 
   // Render subject progress item with real-time updates
@@ -265,24 +292,15 @@ export const ProgressScreen = ({ navigation }: any) => {
             </View>
             
             <View style={styles.flashcardStatItem}>
-              <Text style={styles.flashcardStatValue}>{dueFlashcards}</Text>
-              <Text style={styles.flashcardStatLabel}>Due Today</Text>
+              <Text style={styles.flashcardStatValue}>{notReviewedToday.length}</Text>
+              <Text style={styles.flashcardStatLabel}>Not Reviewed Today</Text>
             </View>
             
             <View style={styles.flashcardStatItem}>
-              <Text style={styles.flashcardStatValue}>{masteredFlashcards}</Text>
-              <Text style={styles.flashcardStatLabel}>Mastered</Text>
+              <Text style={styles.flashcardStatValue}>{reviewedToday.length}</Text>
+              <Text style={styles.flashcardStatLabel}>Reviewed Today</Text>
             </View>
           </View>
-          
-          {activeSession?.type === 'flashcards' && (
-            <TouchableOpacity
-              style={styles.continueReviewButton}
-              onPress={() => navigation.navigate('FlashcardReview')}
-            >
-              <Text style={styles.continueReviewButtonText}>Continue Review</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Chart Type Selector */}
@@ -448,12 +466,6 @@ export const ProgressScreen = ({ navigation }: any) => {
               <>
                 <View style={styles.subjectDetailHeader}>
                   <Text style={styles.subjectDetailName}>{selectedSubject}</Text>
-                  <TouchableOpacity
-                    style={styles.reviewButton}
-                    onPress={handleStartReview}
-                  >
-                    <Text style={styles.reviewButtonText}>Review Cards</Text>
-                  </TouchableOpacity>
                 </View>
                 
                 <View style={styles.subjectDetailStats}>
@@ -488,9 +500,16 @@ export const ProgressScreen = ({ navigation }: any) => {
                   </View>
                   
                   <View style={styles.subjectDetailStat}>
-                    <Text style={styles.subjectDetailStatLabel}>Cards Due Today</Text>
+                    <Text style={styles.subjectDetailStatLabel}>Not Reviewed Today</Text>
                     <Text style={styles.subjectDetailStatValue}>
-                      {dueFlashcards}
+                      {notReviewedToday.filter(card => card.subject === selectedSubject).length}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Reviewed Today</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {reviewedToday.filter(card => card.subject === selectedSubject).length}
                     </Text>
                   </View>
                 </View>
@@ -498,22 +517,9 @@ export const ProgressScreen = ({ navigation }: any) => {
                 <View style={styles.subjectDetailActions}>
                   <TouchableOpacity
                     style={styles.subjectDetailButton}
-                    onPress={() => {
-                      setShowSubjectModal(false);
-                      navigation.navigate('Flashcards', { subject: selectedSubject });
-                    }}
+                    onPress={handleViewFlashcards}
                   >
                     <Text style={styles.subjectDetailButtonText}>View Flashcards</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.subjectDetailButton, styles.subjectDetailButtonSecondary]}
-                    onPress={() => {
-                      setShowSubjectModal(false);
-                      navigation.navigate('FlashcardReview', { subject: selectedSubject });
-                    }}
-                  >
-                    <Text style={styles.subjectDetailButtonTextSecondary}>Start Review</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -666,19 +672,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
-  },
-  continueReviewButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  continueReviewButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
   chartTypeContainer: {
     marginBottom: 16,
@@ -931,17 +924,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111827',
   },
-  reviewButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  reviewButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   subjectDetailStats: {
     marginBottom: 20,
   },
@@ -970,19 +952,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
-    marginRight: 8,
-  },
-  subjectDetailButtonSecondary: {
-    backgroundColor: '#F3F4F6',
   },
   subjectDetailButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
-  },
-  subjectDetailButtonTextSecondary: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
   },
 });
