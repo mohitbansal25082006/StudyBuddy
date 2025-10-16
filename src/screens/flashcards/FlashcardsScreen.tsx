@@ -21,9 +21,7 @@ import {
   Share,
   StatusBar,
   KeyboardAvoidingView,
-  Platform,
-  Image,
-  Vibration
+  Platform
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
@@ -38,8 +36,6 @@ import {
 } from '../../services/supabase';
 import { 
   generateFlashcardContent, 
-  generateFlashcardHint,
-  generateFlashcardExplanation,
   optimizeStudySchedule
 } from '../../services/openai';
 import { Flashcard } from '../../types';
@@ -47,7 +43,6 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -88,9 +83,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const [adding, setAdding] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [dueFlashcards, setDueFlashcards] = useState<Flashcard[]>([]);
-  const [masteredFlashcards, setMasteredFlashcards] = useState<Flashcard[]>([]);
   const [learningFlashcards, setLearningFlashcards] = useState<Flashcard[]>([]);
-  const [newFlashcards, setNewFlashcards] = useState<Flashcard[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'difficulty' | 'accuracy' | 'next_review'>('newest');
   const [showSortModal, setShowSortModal] = useState(false);
@@ -100,10 +93,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const [showBatchActionsModal, setShowBatchActionsModal] = useState(false);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [selectMode, setSelectMode] = useState(false);
-  const [showImagePicker, setShowImagePicker] = useState(false);
-  const [cardImage, setCardImage] = useState<string | null>(null);
   const [showAIPreviewModal, setShowAIPreviewModal] = useState(false);
-  const [aiPreviewCards, setAiPreviewCards] = useState<Array<{question: string, answer: string, hint?: string, explanation?: string}>>([]);
+  const [aiPreviewCards, setAiPreviewCards] = useState<Array<{question: string, answer: string, hint?: string}>>([]);
   const [studyStreak, setStudyStreak] = useState(0);
   const [stats, setStats] = useState<any>(null);
   
@@ -113,16 +104,12 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     answer: '',
     difficulty: 3,
     hint: '',
-    explanation: '',
-    image_url: '',
   });
   
   const [generateForm, setGenerateForm] = useState({
     subject: selectedSubject || '',
     topic: '',
     count: 5,
-    includeHints: true,
-    includeExplanations: true,
   });
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -194,18 +181,11 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const categorizeFlashcards = () => {
     if (!user) return;
     
-    const mastered = flashcards.filter(card => 
-      card.user_id === user.id && 
-      card.correct_count >= 5 && 
-      (card.correct_count / Math.max(card.review_count, 1)) >= 0.9
-    );
-    
     const learning = flashcards.filter(card => 
       card.user_id === user.id && 
       (card.correct_count < 5 || (card.correct_count / Math.max(card.review_count, 1)) < 0.9)
     );
     
-    setMasteredFlashcards(mastered);
     setLearningFlashcards(learning);
   };
 
@@ -287,21 +267,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     return filtered;
   }, [flashcards, user, selectedSubject, searchQuery, sortBy]);
 
-  // Handle picking an image
-  const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    });
-
-    if (!result.canceled) {
-      setCardImage(result.assets[0].uri);
-      setNewCard({ ...newCard, image_url: result.assets[0].uri });
-    }
-  };
-
   // Handle adding a new flashcard
   const handleAddFlashcard = async () => {
     if (!newCard.question.trim() || !newCard.answer.trim() || !newCard.subject.trim()) {
@@ -327,8 +292,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         answer: newCard.answer,
         difficulty: newCard.difficulty,
         hint: newCard.hint,
-        explanation: newCard.explanation,
-        image_url: newCard.image_url,
         next_review: nextReview.toISOString(),
       });
 
@@ -339,10 +302,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         answer: '',
         difficulty: 3,
         hint: '',
-        explanation: '',
-        image_url: '',
       });
-      setCardImage(null);
       
       setShowAddModal(false);
       
@@ -378,8 +338,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         answer: editingCard.answer,
         difficulty: editingCard.difficulty,
         hint: editingCard.hint,
-        explanation: editingCard.explanation,
-        image_url: editingCard.image_url,
       });
       
       setShowEditModal(false);
@@ -415,9 +373,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       const generatedCards = await generateFlashcardContent(
         generateForm.subject,
         generateForm.topic,
-        generateForm.count,
-        generateForm.includeHints,
-        generateForm.includeExplanations
+        generateForm.count
       );
 
       // Set preview cards
@@ -448,7 +404,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           answer: card.answer,
           difficulty: 3,
           hint: card.hint || '',
-          explanation: card.explanation || '',
           next_review: nextReview.toISOString(),
         });
       }
@@ -458,8 +413,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         subject: selectedSubject || '',
         topic: '',
         count: 5,
-        includeHints: true,
-        includeExplanations: true,
       });
       
       setShowAIPreviewModal(false);
@@ -519,56 +472,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     }
   };
 
-  // Handle generating AI hint for a flashcard
-  const handleGenerateHint = async (cardId: string) => {
-    if (!user) return;
-    
-    try {
-      const card = flashcards.find(c => c.id === cardId);
-      if (!card) return;
-      
-      // Generate hint with AI
-      const hint = await generateFlashcardHint(card.question, card.answer);
-      
-      // Update the card with the hint
-      await updateFlashcard(cardId, { hint });
-      
-      // Refresh flashcards
-      await fetchFlashcards(user.id, selectedSubject || undefined);
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'AI hint generated for this flashcard');
-    } catch (error: any) {
-      console.error('Error generating hint:', error);
-      Alert.alert('Error', error.message || 'Failed to generate hint');
-    }
-  };
-
-  // Handle generating AI explanation for a flashcard
-  const handleGenerateExplanation = async (cardId: string) => {
-    if (!user) return;
-    
-    try {
-      const card = flashcards.find(c => c.id === cardId);
-      if (!card) return;
-      
-      // Generate explanation with AI
-      const explanation = await generateFlashcardExplanation(card.question, card.answer);
-      
-      // Update the card with the explanation
-      await updateFlashcard(cardId, { explanation });
-      
-      // Refresh flashcards
-      await fetchFlashcards(user.id, selectedSubject || undefined);
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'AI explanation generated for this flashcard');
-    } catch (error: any) {
-      console.error('Error generating explanation:', error);
-      Alert.alert('Error', error.message || 'Failed to generate explanation');
-    }
-  };
-
   // Handle deleting a flashcard
   const handleDeleteFlashcard = async (cardId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -598,7 +501,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     );
   };
 
-  // Handle starting a review session - Modified to not start study session
+  // Handle starting a review session
   const handleStartReview = () => {
     // Check if there are any flashcards for the selected subject
     const subjectFlashcards = selectedSubject 
@@ -623,7 +526,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     }
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to review screen without starting a session
+    // Navigate to review screen
     navigation.navigate('FlashcardReview', { subject: selectedSubject });
   };
 
@@ -631,9 +534,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const handleShareFlashcards = async () => {
     const totalCards = getFilteredAndSortedFlashcards().length;
     const dueCards = dueFlashcards.length;
-    const masteredCards = masteredFlashcards.length;
     
-    const message = `📚 My Flashcards\n\n📖 Total Cards: ${totalCards}\n🗂️ Due for Review: ${dueCards}\n✅ Mastered: ${masteredCards}\n📚 Learning: ${learningFlashcards.length}\n🔥 Study Streak: ${studyStreak} days\n\n#StudyBuddy #Flashcards`;
+    const message = `📚 My Flashcards\n\n📖 Total Cards: ${totalCards}\n🗂️ Due for Review: ${dueCards}\n📚 Learning: ${learningFlashcards.length}\n🔥 Study Streak: ${studyStreak} days\n\n#StudyBuddy #Flashcards`;
     
     try {
       await Share.share({
@@ -770,7 +672,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     const correctCount = typeof item.correct_count === 'number' ? item.correct_count : 0;
     const accuracy = reviewCount > 0 ? Math.round((correctCount / reviewCount) * 100) : 0;
     const isDue = dueFlashcards.some(card => card.id === item.id);
-    const isMastered = masteredFlashcards.some(card => card.id === item.id);
     
     return (
       <Animated.View
@@ -816,11 +717,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                     <Text style={styles.dueBadgeText}>Due</Text>
                   </View>
                 )}
-                {isMastered && (
-                  <View style={styles.masteredBadge}>
-                    <Text style={styles.masteredBadgeText}>✓</Text>
-                  </View>
-                )}
               </View>
             </View>
             
@@ -832,10 +728,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           <Text style={styles.flashcardQuestion} numberOfLines={isExpanded ? undefined : 2}>
             {item.question}
           </Text>
-          
-          {item.image_url && (
-            <Image source={{ uri: item.image_url }} style={styles.flashcardImage} />
-          )}
           
           {!isExpanded && (
             <Text style={styles.flashcardAnswer} numberOfLines={1}>
@@ -851,13 +743,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 <View style={styles.hintContainer}>
                   <Text style={styles.hintLabel}>💡 Hint:</Text>
                   <Text style={styles.hintText}>{item.hint}</Text>
-                </View>
-              )}
-              
-              {item.explanation && (
-                <View style={styles.explanationContainer}>
-                  <Text style={styles.explanationLabel}>📝 Explanation:</Text>
-                  <Text style={styles.explanationText}>{item.explanation}</Text>
                 </View>
               )}
               
@@ -898,26 +783,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   <Text style={styles.cardReviewButtonText}>Review</Text>
                 </TouchableOpacity>
               </View>
-              
-              <View style={styles.aiActions}>
-                {!item.hint && (
-                  <TouchableOpacity
-                    style={styles.aiButton}
-                    onPress={() => handleGenerateHint(item.id)}
-                  >
-                    <Text style={styles.aiButtonText}>Generate Hint</Text>
-                  </TouchableOpacity>
-                )}
-                
-                {!item.explanation && (
-                  <TouchableOpacity
-                    style={styles.aiButton}
-                    onPress={() => handleGenerateExplanation(item.id)}
-                  >
-                    <Text style={styles.aiButtonText}>Generate Explanation</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
             </View>
           )}
         </TouchableOpacity>
@@ -925,7 +790,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         {!isExpanded && (
           <View style={styles.flashcardFooter}>
             <Text style={styles.flashcardStatsText}>
-              Reviewed: {reviewCount} | Correct: {correctCount} | Accuracy: {accuracy}%
+              Reviewed: {reviewCount} | Accuracy: {accuracy}%
             </Text>
             
             <View style={styles.flashcardActions}>
@@ -1002,8 +867,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           </View>
           
           <View style={styles.statCard}>
-            <Text style={styles.statCardValue}>{masteredFlashcards.length}</Text>
-            <Text style={styles.statCardLabel}>Mastered</Text>
+            <Text style={styles.statCardValue}>{learningFlashcards.length}</Text>
+            <Text style={styles.statCardLabel}>Learning</Text>
           </View>
           
           <View style={styles.statCard}>
@@ -1249,37 +1114,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 numberOfLines={2}
               />
               
-              <Input
-                label="Explanation (Optional)"
-                value={newCard.explanation}
-                onChangeText={(text) => setNewCard({ ...newCard, explanation: text })}
-                placeholder="An explanation of the concept..."
-                multiline
-                numberOfLines={3}
-              />
-              
-              <View style={styles.imageContainer}>
-                <Text style={styles.imageLabel}>Image (Optional)</Text>
-                {cardImage ? (
-                  <View style={styles.imagePreviewContainer}>
-                    <Image source={{ uri: cardImage }} style={styles.imagePreview} />
-                    <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => {
-                        setCardImage(null);
-                        setNewCard({ ...newCard, image_url: '' });
-                      }}
-                    >
-                      <Text style={styles.removeImageText}>Remove</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.addImageButton} onPress={handlePickImage}>
-                    <Text style={styles.addImageText}>Add Image</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              
               <View style={styles.difficultyContainer}>
                 <Text style={styles.difficultyLabel}>Difficulty</Text>
                 <View style={styles.difficultyOptions}>
@@ -1379,34 +1213,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                     numberOfLines={2}
                   />
                   
-                  <Input
-                    label="Explanation (Optional)"
-                    value={editingCard.explanation || ''}
-                    onChangeText={(text) => setEditingCard({ ...editingCard, explanation: text })}
-                    placeholder="An explanation of the concept..."
-                    multiline
-                    numberOfLines={3}
-                  />
-                  
-                  <View style={styles.imageContainer}>
-                    <Text style={styles.imageLabel}>Image (Optional)</Text>
-                    {editingCard.image_url ? (
-                      <View style={styles.imagePreviewContainer}>
-                        <Image source={{ uri: editingCard.image_url }} style={styles.imagePreview} />
-                        <TouchableOpacity
-                          style={styles.removeImageButton}
-                          onPress={() => setEditingCard({ ...editingCard, image_url: '' })}
-                        >
-                          <Text style={styles.removeImageText}>Remove</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <TouchableOpacity style={styles.addImageButton} onPress={handlePickImage}>
-                        <Text style={styles.addImageText}>Add Image</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  
                   <View style={styles.difficultyContainer}>
                     <Text style={styles.difficultyLabel}>Difficulty</Text>
                     <View style={styles.difficultyOptions}>
@@ -1500,36 +1306,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 keyboardType="numeric"
               />
               
-              <View style={styles.switchContainer}>
-                <Text style={styles.switchLabel}>Include Hints</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.switch,
-                    generateForm.includeHints ? styles.switchOn : styles.switchOff
-                  ]}
-                  onPress={() => setGenerateForm({ ...generateForm, includeHints: !generateForm.includeHints })}
-                >
-                  <Text style={styles.switchText}>
-                    {generateForm.includeHints ? 'ON' : 'OFF'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.switchContainer}>
-                <Text style={styles.switchLabel}>Include Explanations</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.switch,
-                    generateForm.includeExplanations ? styles.switchOn : styles.switchOff
-                  ]}
-                  onPress={() => setGenerateForm({ ...generateForm, includeExplanations: !generateForm.includeExplanations })}
-                >
-                  <Text style={styles.switchText}>
-                    {generateForm.includeExplanations ? 'ON' : 'OFF'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              
               <View style={styles.modalActions}>
                 <Button
                   title="Cancel"
@@ -1574,9 +1350,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   {card.hint && (
                     <Text style={styles.aiPreviewHint}>💡 Hint: {card.hint}</Text>
                   )}
-                  {card.explanation && (
-                    <Text style={styles.aiPreviewExplanation}>📝 Explanation: {card.explanation}</Text>
-                  )}
                 </View>
               ))}
             </ScrollView>
@@ -1598,7 +1371,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </View>
       </Modal>
 
-      {/* AI Features Modal - Removed Categorize Flashcards button */}
+      {/* AI Features Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1672,7 +1445,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Sort Modal - Removed checkmark icon */}
+      {/* Sort Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1748,11 +1521,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   </View>
                   
                   <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{masteredFlashcards.length}</Text>
-                    <Text style={styles.statsModalLabel}>Mastered</Text>
-                  </View>
-                  
-                  <View style={styles.statsModalItem}>
                     <Text style={styles.statsModalValue}>{learningFlashcards.length}</Text>
                     <Text style={styles.statsModalLabel}>Learning</Text>
                   </View>
@@ -1775,7 +1543,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   {subjects.map(subject => {
                     const subjectCards = filteredFlashcards.filter(card => card.subject === subject);
                     const subjectDue = dueFlashcards.filter(card => card.subject === subject);
-                    const subjectMastered = masteredFlashcards.filter(card => card.subject === subject);
                     
                     return (
                       <View key={subject} style={styles.subjectStatsItem}>
@@ -1792,18 +1559,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                               style={[
                                 styles.subjectStatsBarFill, 
                                 { 
-                                  width: `${(subjectMastered.length / Math.max(subjectCards.length, 1)) * 100}%`,
-                                  backgroundColor: '#10B981'
-                                }
-                              ]} 
-                            />
-                          </View>
-                          
-                          <View style={styles.subjectStatsBar}>
-                            <View 
-                              style={[
-                                styles.subjectStatsBarFill, 
-                                { 
                                   width: `${(subjectDue.length / Math.max(subjectCards.length, 1)) * 100}%`,
                                   backgroundColor: '#F59E0B'
                                 }
@@ -1813,11 +1568,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                         </View>
                         
                         <View style={styles.subjectStatsLegend}>
-                          <View style={styles.subjectStatsLegendItem}>
-                            <View style={[styles.subjectStatsLegendColor, { backgroundColor: '#10B981' }]} />
-                            <Text style={styles.subjectStatsLegendText}>Mastered: {subjectMastered.length}</Text>
-                          </View>
-                          
                           <View style={styles.subjectStatsLegendItem}>
                             <View style={[styles.subjectStatsLegendColor, { backgroundColor: '#F59E0B' }]} />
                             <Text style={styles.subjectStatsLegendText}>Due: {subjectDue.length}</Text>
@@ -2161,19 +1911,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  masteredBadge: {
-    backgroundColor: '#10B981',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  masteredBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
   difficultyBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -2190,13 +1927,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 8,
     lineHeight: 22,
-  },
-  flashcardImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-    marginBottom: 8,
-    resizeMode: 'cover',
   },
   flashcardAnswer: {
     fontSize: 14,
@@ -2231,22 +1961,6 @@ const styles = StyleSheet.create({
   hintText: {
     fontSize: 14,
     color: '#0C4A6E',
-  },
-  explanationContainer: {
-    backgroundColor: '#F0FDF4',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  explanationLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#166534',
-    marginBottom: 4,
-  },
-  explanationText: {
-    fontSize: 14,
-    color: '#14532D',
   },
   flashcardStats: {
     flexDirection: 'row',
@@ -2294,22 +2008,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
-  },
-  aiActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  aiButton: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  aiButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6366F1',
   },
   flashcardFooter: {
     borderTopWidth: 1,
@@ -2422,52 +2120,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#6B7280',
   },
-  imageContainer: {
-    marginBottom: 16,
-  },
-  imageLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  imagePreviewContainer: {
-    position: 'relative',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-    resizeMode: 'cover',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  removeImageText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  addImageButton: {
-    height: 100,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  addImageText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
   difficultyContainer: {
     marginBottom: 16,
   },
@@ -2499,35 +2151,6 @@ const styles = StyleSheet.create({
     color: '#374151',
   },
   selectedDifficultyOptionText: {
-    color: '#FFFFFF',
-  },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  switchLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  switch: {
-    width: 60,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  switchOn: {
-    backgroundColor: '#6366F1',
-  },
-  switchOff: {
-    backgroundColor: '#E5E7EB',
-  },
-  switchText: {
-    fontSize: 12,
-    fontWeight: '600',
     color: '#FFFFFF',
   },
   modalActions: {
@@ -2580,12 +2203,9 @@ const styles = StyleSheet.create({
   },
   aiPreviewHint: {
     fontSize: 12,
-    color: '#0369A1',
-    marginBottom: 4,
-  },
-  aiPreviewExplanation: {
-    fontSize: 12,
-    color: '#166534',
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   aiFeaturesModalOverlay: {
     flex: 1,
