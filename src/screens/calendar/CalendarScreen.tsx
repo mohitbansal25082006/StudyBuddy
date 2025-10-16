@@ -4,10 +4,11 @@
 // Google Calendar integration for study scheduling
 // ============================================
 
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, RefreshControl } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
+import { useFocusEffect } from '@react-navigation/native';
 import { 
   getCalendarEvents, 
   createCalendarEvent, 
@@ -24,9 +25,36 @@ export const CalendarScreen = ({ navigation }: any) => {
   const { calendarEvents, fetchCalendarEvents } = useStudyStore();
   
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [eventsForSelectedDate, setEventsForSelectedDate] = useState<CalendarEvent[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0); // For forcing re-renders
+  
+  // Refresh calendar when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const refreshCalendar = async () => {
+        if (!user) return;
+        
+        try {
+          // Get events for the current month
+          const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+          const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+          
+          await fetchCalendarEvents(
+            user.id,
+            startOfMonth.toISOString(),
+            endOfMonth.toISOString()
+          );
+        } catch (error) {
+          console.error('Error refreshing calendar events:', error);
+        }
+      };
+      
+      refreshCalendar();
+    }, [user, currentMonth, fetchCalendarEvents])
+  );
 
   // Load calendar events
   useEffect(() => {
@@ -51,7 +79,7 @@ export const CalendarScreen = ({ navigation }: any) => {
     };
 
     loadEvents();
-  }, [user, currentMonth, fetchCalendarEvents]);
+  }, [user, currentMonth, fetchCalendarEvents, refreshKey]);
 
   // Update events for selected date
   useEffect(() => {
@@ -70,6 +98,25 @@ export const CalendarScreen = ({ navigation }: any) => {
     
     setEventsForSelectedDate(filtered);
   }, [selectedDate, calendarEvents]);
+
+  // Handle refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+      
+      await fetchCalendarEvents(
+        user?.id || '',
+        startOfMonth.toISOString(),
+        endOfMonth.toISOString()
+      );
+    } catch (error) {
+      console.error('Error refreshing calendar:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, currentMonth, fetchCalendarEvents]);
 
   // Generate calendar days
   const generateCalendarDays = () => {
@@ -245,7 +292,13 @@ export const CalendarScreen = ({ navigation }: any) => {
           />
         </View>
         
-        <ScrollView style={styles.eventsList} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.eventsList} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
           {eventsForSelectedDate.length > 0 ? (
             eventsForSelectedDate.map(event => (
               <CalendarEventComponent
@@ -391,6 +444,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#111827',
+    flex: 1,
   },
   addButton: {
     paddingHorizontal: 16,

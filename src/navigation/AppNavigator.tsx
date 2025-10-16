@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\navigation\AppNavigator.tsx
 // ============================================
 // APP NAVIGATOR
-// Main navigation after authentication
+// Enhanced for calendar live refresh
 // ============================================
 
 import React from 'react';
@@ -254,6 +254,13 @@ export const AppNavigator: React.FC = () => {
       />
       
       {/* Calendar Screens */}
+      <Stack.Screen 
+        name="Calendar" 
+        component={CalendarScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
       <Stack.Screen 
         name="AddEvent" 
         component={AddEventScreen} 

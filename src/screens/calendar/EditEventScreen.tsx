@@ -5,8 +5,9 @@
 // ============================================
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Alert, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, Alert, StyleSheet, TouchableOpacity, BackHandler } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
+import { useFocusEffect } from '@react-navigation/native';
 import { getCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../../services/supabase';
 import { CalendarEvent } from '../../types';
 import { Input } from '../../components/Input';
@@ -33,6 +34,58 @@ export const EditEventScreen = ({ route, navigation }: any) => {
   const [dateValue, setDateValue] = useState(new Date());
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Handle back button press
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        handleGoBack();
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      
+      return () => {
+        subscription.remove();
+      };
+    }, [hasChanges])
+  );
+
+  // Handle going back
+  const handleGoBack = () => {
+    // Check if form has unsaved changes
+    if (hasChanges) {
+      Alert.alert(
+        'Discard Changes?',
+        'You have unsaved changes. Are you sure you want to go back?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Discard', onPress: () => navigation.goBack() },
+        ]
+      );
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  // Track changes
+  useEffect(() => {
+    if (event) {
+      const originalTitle = event.title;
+      const originalDescription = event.description || '';
+      const originalSubject = event.subject;
+      const originalEventType = event.event_type;
+      
+      const hasChanged = 
+        title !== originalTitle ||
+        description !== originalDescription ||
+        subject !== originalSubject ||
+        eventType !== originalEventType;
+      
+      setHasChanges(hasChanged);
+    }
+  }, [title, description, subject, eventType, event]);
 
   // Load event
   useEffect(() => {
@@ -111,8 +164,10 @@ export const EditEventScreen = ({ route, navigation }: any) => {
         event_type: eventType,
       });
       
-      Alert.alert('Success', 'Event updated successfully');
-      navigation.goBack();
+      // Show success message
+      Alert.alert('Success', 'Event updated successfully', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (error: any) {
       console.error('Error updating event:', error);
       Alert.alert('Error', error.message || 'Failed to update event');
@@ -134,8 +189,11 @@ export const EditEventScreen = ({ route, navigation }: any) => {
           onPress: async () => {
             try {
               await deleteCalendarEvent(eventId);
-              Alert.alert('Success', 'Event deleted successfully');
-              navigation.goBack();
+              
+              // Show success message
+              Alert.alert('Success', 'Event deleted successfully', [
+                { text: 'OK', onPress: () => navigation.goBack() }
+              ]);
             } catch (error: any) {
               console.error('Error deleting event:', error);
               Alert.alert('Error', error.message || 'Failed to delete event');
@@ -181,165 +239,174 @@ export const EditEventScreen = ({ route, navigation }: any) => {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>Edit Event</Text>
-      
-      <Input
-        label="Title"
-        value={title}
-        onChangeText={setTitle}
-        placeholder="e.g., Math Study Session"
-      />
-      
-      <Input
-        label="Description"
-        value={description}
-        onChangeText={setDescription}
-        placeholder="Optional description"
-        multiline
-        numberOfLines={3}
-      />
-      
-      <View style={styles.row}>
-        <View style={styles.halfWidth}>
-          <Text style={styles.label}>Date</Text>
-          <View style={styles.dateContainer}>
-            <Text style={styles.dateText}>{formatDate(dateValue)}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.halfWidth}>
-          <Text style={styles.label}>Event Type</Text>
-          <View style={styles.optionsContainer}>
-            {EVENT_TYPES.map(type => (
-              <TouchableOpacity
-                key={type.value}
-                style={[
-                  styles.option,
-                  eventType === type.value && styles.selectedOption,
-                ]}
-                onPress={() => setEventType(type.value)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    eventType === type.value && styles.selectedOptionText,
-                  ]}
-                >
-                  {type.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+    <View style={styles.container}>
+      {/* Header with back button */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
+          <Text style={styles.backButtonText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Edit Event</Text>
+        <View style={styles.placeholder} />
       </View>
       
-      <View style={styles.row}>
-        <View style={styles.halfWidth}>
-          <Text style={styles.label}>Start Time</Text>
-          <View style={styles.timeContainer}>
-            <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
-              {timeOptions.map(time => (
-                <TouchableOpacity
-                  key={time}
-                  style={[
-                    styles.timeOption,
-                    startTime === time && styles.selectedTimeOption,
-                  ]}
-                  onPress={() => setStartTime(time)}
-                >
-                  <Text
-                    style={[
-                      styles.timeOptionText,
-                      startTime === time && styles.selectedTimeOptionText,
-                    ]}
-                  >
-                    {time}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-        
-        <View style={styles.halfWidth}>
-          <Text style={styles.label}>End Time</Text>
-          <View style={styles.timeContainer}>
-            <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
-              {timeOptions.map(time => (
-                <TouchableOpacity
-                  key={time}
-                  style={[
-                    styles.timeOption,
-                    endTime === time && styles.selectedTimeOption,
-                  ]}
-                  onPress={() => setEndTime(time)}
-                >
-                  <Text
-                    style={[
-                      styles.timeOptionText,
-                      endTime === time && styles.selectedTimeOptionText,
-                    ]}
-                  >
-                    {time}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </View>
-      
-      {subjects.length > 0 ? (
-        <View style={styles.subjectContainer}>
-          <Text style={styles.label}>Subject</Text>
-          <View style={styles.optionsContainer}>
-            {subjects.map(subj => (
-              <TouchableOpacity
-                key={subj}
-                style={[
-                  styles.option,
-                  subject === subj && styles.selectedOption,
-                ]}
-                onPress={() => setSubject(subj)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    subject === subj && styles.selectedOptionText,
-                  ]}
-                >
-                  {subj}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      ) : (
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <Input
-          label="Subject"
-          value={subject}
-          onChangeText={setSubject}
-          placeholder="e.g., Mathematics"
+          label="Title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="e.g., Math Study Session"
         />
-      )}
-      
-      <Button
-        title="Update Event"
-        onPress={handleUpdateEvent}
-        loading={saving}
-        style={styles.updateButton}
-      />
-      
-      <Button
-        title="Delete Event"
-        onPress={handleDeleteEvent}
-        variant="outline"
-        style={styles.deleteButton}
-      />
+        
+        <Input
+          label="Description"
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Optional description"
+          multiline
+          numberOfLines={3}
+        />
+        
+        <View style={styles.row}>
+          <View style={styles.halfWidth}>
+            <Text style={styles.label}>Date</Text>
+            <View style={styles.dateContainer}>
+              <Text style={styles.dateText}>{formatDate(dateValue)}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.halfWidth}>
+            <Text style={styles.label}>Event Type</Text>
+            <View style={styles.optionsContainer}>
+              {EVENT_TYPES.map(type => (
+                <TouchableOpacity
+                  key={type.value}
+                  style={[
+                    styles.option,
+                    eventType === type.value && styles.selectedOption,
+                  ]}
+                  onPress={() => setEventType(type.value)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      eventType === type.value && styles.selectedOptionText,
+                    ]}
+                  >
+                    {type.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+        
+        <View style={styles.row}>
+          <View style={styles.halfWidth}>
+            <Text style={styles.label}>Start Time</Text>
+            <View style={styles.timeContainer}>
+              <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
+                {timeOptions.map(time => (
+                  <TouchableOpacity
+                    key={time}
+                    style={[
+                      styles.timeOption,
+                      startTime === time && styles.selectedTimeOption,
+                    ]}
+                    onPress={() => setStartTime(time)}
+                  >
+                    <Text
+                      style={[
+                        styles.timeOptionText,
+                        startTime === time && styles.selectedTimeOptionText,
+                      ]}
+                    >
+                      {time}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+          
+          <View style={styles.halfWidth}>
+            <Text style={styles.label}>End Time</Text>
+            <View style={styles.timeContainer}>
+              <ScrollView style={styles.timeScroll} showsVerticalScrollIndicator={false}>
+                {timeOptions.map(time => (
+                  <TouchableOpacity
+                    key={time}
+                    style={[
+                      styles.timeOption,
+                      endTime === time && styles.selectedTimeOption,
+                    ]}
+                    onPress={() => setEndTime(time)}
+                  >
+                    <Text
+                      style={[
+                        styles.timeOptionText,
+                        endTime === time && styles.selectedTimeOptionText,
+                      ]}
+                    >
+                      {time}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+        
+        {subjects.length > 0 ? (
+          <View style={styles.subjectContainer}>
+            <Text style={styles.label}>Subject</Text>
+            <View style={styles.optionsContainer}>
+              {subjects.map(subj => (
+                <TouchableOpacity
+                  key={subj}
+                  style={[
+                    styles.option,
+                    subject === subj && styles.selectedOption,
+                  ]}
+                  onPress={() => setSubject(subj)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      subject === subj && styles.selectedOptionText,
+                    ]}
+                  >
+                    {subj}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : (
+          <Input
+            label="Subject"
+            value={subject}
+            onChangeText={setSubject}
+            placeholder="e.g., Mathematics"
+          />
+        )}
+        
+        <Button
+          title="Update Event"
+          onPress={handleUpdateEvent}
+          loading={saving}
+          style={styles.updateButton}
+        />
+        
+        <Button
+          title="Delete Event"
+          onPress={handleDeleteEvent}
+          variant="outline"
+          style={styles.deleteButton}
+        />
+      </ScrollView>
       
       {saving && <LoadingSpinner message="Updating event..." />}
-    </ScrollView>
+    </View>
   );
 };
 
@@ -348,14 +415,41 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
-  contentContainer: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
+    paddingTop: 40,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  title: {
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+  },
+  backButtonText: {
     fontSize: 24,
+    color: '#6B7280',
+  },
+  headerTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 24,
+  },
+  placeholder: {
+    width: 40,
+  },
+  content: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 20,
   },
   row: {
     flexDirection: 'row',
