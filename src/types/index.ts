@@ -172,7 +172,10 @@ export type AppStackParamList = {
   Progress: undefined;
   Subjects: undefined;
   StudyPlanDetail: { planId: string };
-  FlashcardReview: { subject: string };
+  FlashcardReview: { 
+    subject: string;
+    flashcards?: Flashcard[]; // Optional array of flashcards to review
+  };
   AddFlashcard: { subject: string };
   AddEvent: undefined;
   EditEvent: { eventId: string };

@@ -544,18 +544,12 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       return;
     }
     
-    // Check if there are flashcards due for review
-    if (dueFlashcards.length === 0) {
-      Alert.alert(
-        'No Cards to Review', 
-        'All your flashcards have been reviewed recently. Check back later for cards due for review!'
-      );
-      return;
-    }
-    
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Navigate to review screen
-    navigation.navigate('FlashcardReview', { subject: selectedSubject });
+    // Navigate to review screen with all flashcards for the subject
+    navigation.navigate('FlashcardReview', { 
+      subject: selectedSubject,
+      flashcards: subjectFlashcards 
+    });
   };
 
   // Handle sharing flashcards
@@ -798,7 +792,10 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 
                 <TouchableOpacity
                   style={styles.cardReviewButton}
-                  onPress={() => navigation.navigate('FlashcardReview', { subject: item.subject })}
+                  onPress={() => navigation.navigate('FlashcardReview', { 
+                    subject: item.subject,
+                    flashcards: [item] // Start review with just this card
+                  })}
                 >
                   <Text style={styles.cardReviewButtonText}>Review</Text>
                 </TouchableOpacity>
@@ -816,7 +813,10 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
             <View style={styles.flashcardActions}>
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => navigation.navigate('FlashcardReview', { subject: item.subject })}
+                onPress={() => navigation.navigate('FlashcardReview', { 
+                  subject: item.subject,
+                  flashcards: [item] // Start review with just this card
+                })}
               >
                 <Text style={styles.actionButtonText}>Review</Text>
               </TouchableOpacity>

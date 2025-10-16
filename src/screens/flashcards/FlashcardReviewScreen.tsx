@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\screens\flashcards\FlashcardReviewScreen.tsx
 // ============================================
-// FLASHCARD REVIEW SCREEN - SIMPLIFIED VERSION
-// Simple flashcard review with flip functionality
+// FLASHCARD REVIEW SCREEN - UPDATED VERSION
+// Enhanced flashcard review with spaced repetition
 // ============================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -13,11 +13,12 @@ import {
   Dimensions,
   TouchableOpacity,
   StatusBar,
-  Image
+  Image,
+  Alert
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getFlashcardsForReview } from '../../services/supabase';
+import { getFlashcardsForReview, updateFlashcard } from '../../services/supabase';
 import { Flashcard as FlashcardType } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import * as Haptics from 'expo-haptics';
@@ -25,9 +26,9 @@ import * as Haptics from 'expo-haptics';
 const { width, height } = Dimensions.get('window');
 
 export const FlashcardReviewScreen = ({ route, navigation }: any) => {
-  const { subject } = route.params;
+  const { subject, flashcards: passedFlashcards } = route.params;
   const { user } = useAuthStore();
-  const { activeSession, startSession, stopSession } = useSessionStore();
+  const { activeSession, startSession, stopSession, incrementFlashcardReviews } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
   const [flashcards, setFlashcards] = useState<FlashcardType[]>([]);
@@ -37,6 +38,7 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const [flipAnimation, setFlipAnimation] = useState(new Animated.Value(0));
   const [progressAnimation, setProgressAnimation] = useState(new Animated.Value(0));
   const [isFlipped, setIsFlipped] = useState(false);
+  const [reviewResults, setReviewResults] = useState<{[key: string]: 'correct' | 'incorrect'}>({});
   
   // Load flashcards for review
   useEffect(() => {
@@ -44,13 +46,20 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
       if (!user) return;
       
       try {
-        // Get all flashcards for the subject
-        const allSubjectCards = await getFlashcardsForReview(user.id, subject);
+        let cardsToReview: FlashcardType[] = [];
         
-        if (allSubjectCards.length === 0) {
+        // If flashcards are passed as params, use them
+        if (passedFlashcards && passedFlashcards.length > 0) {
+          cardsToReview = passedFlashcards;
+        } else {
+          // Otherwise get flashcards for the subject
+          cardsToReview = await getFlashcardsForReview(user.id, subject);
+        }
+        
+        if (cardsToReview.length === 0) {
           setFlashcards([]);
         } else {
-          setFlashcards(allSubjectCards);
+          setFlashcards(cardsToReview);
         }
         
         // Start tracking session if not already active
@@ -79,7 +88,7 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         clearInterval(timerInterval);
       }
     };
-  }, [user, subject, navigation, startSession, activeSession]);
+  }, [user, subject, navigation, startSession, activeSession, passedFlashcards]);
   
   // Update progress animation
   useEffect(() => {
@@ -104,6 +113,83 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
       duration: 300,
       useNativeDriver: true,
     }).start();
+  };
+
+  // Handle card rating
+  const handleRateCard = async (rating: 'easy' | 'medium' | 'hard') => {
+    if (!user || currentCardIndex >= flashcards.length) return;
+    
+    const currentCard = flashcards[currentCardIndex];
+    const isCorrect = rating !== 'hard';
+    
+    // Update review results
+    setReviewResults(prev => ({
+      ...prev,
+      [currentCard.id]: isCorrect ? 'correct' : 'incorrect'
+    }));
+    
+    // Increment flashcard reviews in session store
+    incrementFlashcardReviews(isCorrect);
+    
+    // Update flashcard in database
+    try {
+      const now = new Date();
+      const reviewCount = (currentCard.review_count || 0) + 1;
+      const correctCount = (currentCard.correct_count || 0) + (isCorrect ? 1 : 0);
+      
+      // Calculate next review time based on rating
+      let nextReviewInterval = 1; // Default to 1 day
+      
+      if (rating === 'easy') {
+        // Easy cards get reviewed less frequently
+        nextReviewInterval = Math.min(7, Math.pow(2, Math.floor(reviewCount / 3)));
+      } else if (rating === 'medium') {
+        // Medium cards get reviewed at a moderate pace
+        nextReviewInterval = Math.min(5, Math.pow(1.5, Math.floor(reviewCount / 2)));
+      } else {
+        // Hard cards get reviewed more frequently
+        nextReviewInterval = 1;
+      }
+      
+      const nextReview = new Date(now.getTime() + (nextReviewInterval * 24 * 60 * 60 * 1000));
+      
+      await updateFlashcard(currentCard.id, {
+        last_reviewed: now.toISOString(),
+        next_review: nextReview.toISOString(),
+        review_count: reviewCount,
+        correct_count: correctCount,
+      });
+      
+      // Update local flashcard data
+      const updatedFlashcards = [...flashcards];
+      updatedFlashcards[currentCardIndex] = {
+        ...currentCard,
+        last_reviewed: now.toISOString(),
+        next_review: nextReview.toISOString(),
+        review_count: reviewCount,
+        correct_count: correctCount,
+      };
+      setFlashcards(updatedFlashcards);
+      
+      // Move to next card
+      if (currentCardIndex < flashcards.length - 1) {
+        // Reset flip animation
+        setIsFlipped(false);
+        Animated.timing(flipAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+        
+        setCurrentCardIndex(currentCardIndex + 1);
+      } else {
+        // Review complete
+        handleCompleteReview();
+      }
+    } catch (error) {
+      console.error('Error updating flashcard:', error);
+      Alert.alert('Error', 'Failed to update flashcard progress');
+    }
   };
 
   // Handle next card
@@ -141,6 +227,11 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
 
   // Complete the review session
   const handleCompleteReview = () => {
+    // Calculate review statistics
+    const totalReviewed = Object.keys(reviewResults).length;
+    const correctCount = Object.values(reviewResults).filter(result => result === 'correct').length;
+    const accuracy = totalReviewed > 0 ? Math.round((correctCount / totalReviewed) * 100) : 0;
+    
     // Stop timer
     if (timerInterval) {
       clearInterval(timerInterval);
@@ -150,8 +241,17 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     // Stop the session in the store
     stopSession();
     
-    // Go back to previous screen
-    navigation.goBack();
+    // Show completion message
+    Alert.alert(
+      'Review Complete!',
+      `You reviewed ${totalReviewed} flashcards with ${accuracy}% accuracy.`,
+      [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack()
+        }
+      ]
+    );
   };
 
   // Format time
@@ -279,6 +379,32 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
           <View style={styles.flashcardContent}>
             <Text style={styles.flashcardLabel}>Answer</Text>
             <Text style={styles.flashcardText}>{currentCard.answer}</Text>
+            
+            <View style={styles.ratingContainer}>
+              <Text style={styles.ratingLabel}>How well did you know this?</Text>
+              <View style={styles.ratingButtons}>
+                <TouchableOpacity
+                  style={[styles.ratingButton, styles.easyButton]}
+                  onPress={() => handleRateCard('easy')}
+                >
+                  <Text style={styles.ratingButtonText}>Easy</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.ratingButton, styles.mediumButton]}
+                  onPress={() => handleRateCard('medium')}
+                >
+                  <Text style={styles.ratingButtonText}>Medium</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.ratingButton, styles.hardButton]}
+                  onPress={() => handleRateCard('hard')}
+                >
+                  <Text style={styles.ratingButtonText}>Hard</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             
             <TouchableOpacity style={styles.flipButton} onPress={handleFlipCard}>
               <Text style={styles.flipButtonText}>Flip Card</Text>
@@ -436,6 +562,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#6366F1',
+  },
+  ratingContainer: {
+    marginBottom: 16,
+  },
+  ratingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  ratingButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  ratingButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  easyButton: {
+    backgroundColor: '#10B981',
+  },
+  mediumButton: {
+    backgroundColor: '#F59E0B',
+  },
+  hardButton: {
+    backgroundColor: '#EF4444',
+  },
+  ratingButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   navigationContainer: {
     flexDirection: 'row',
