@@ -94,7 +94,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [selectMode, setSelectMode] = useState(false);
   const [showAIPreviewModal, setShowAIPreviewModal] = useState(false);
-  const [aiPreviewCards, setAiPreviewCards] = useState<Array<{question: string, answer: string, hint?: string}>>([]);
+  const [aiPreviewCards, setAiPreviewCards] = useState<Array<{question: string, answer: string}>>([]);
   const [studyStreak, setStudyStreak] = useState(0);
   const [stats, setStats] = useState<any>(null);
   
@@ -103,7 +103,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     question: '',
     answer: '',
     difficulty: 3,
-    hint: '',
   });
   
   const [generateForm, setGenerateForm] = useState({
@@ -291,7 +290,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         question: newCard.question,
         answer: newCard.answer,
         difficulty: newCard.difficulty,
-        hint: newCard.hint,
         next_review: nextReview.toISOString(),
       });
 
@@ -301,7 +299,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         question: '',
         answer: '',
         difficulty: 3,
-        hint: '',
       });
       
       setShowAddModal(false);
@@ -337,7 +334,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         question: editingCard.question,
         answer: editingCard.answer,
         difficulty: editingCard.difficulty,
-        hint: editingCard.hint,
       });
       
       setShowEditModal(false);
@@ -403,7 +399,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           question: card.question,
           answer: card.answer,
           difficulty: 3,
-          hint: card.hint || '',
           next_review: nextReview.toISOString(),
         });
       }
@@ -738,13 +733,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
           {isExpanded && (
             <View style={styles.expandedContent}>
               <Text style={styles.expandedAnswer}>{item.answer}</Text>
-              
-              {item.hint && (
-                <View style={styles.hintContainer}>
-                  <Text style={styles.hintLabel}>💡 Hint:</Text>
-                  <Text style={styles.hintText}>{item.hint}</Text>
-                </View>
-              )}
               
               <View style={styles.flashcardStats}>
                 <View style={styles.statItem}>
@@ -1105,15 +1093,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 numberOfLines={3}
               />
               
-              <Input
-                label="Hint (Optional)"
-                value={newCard.hint}
-                onChangeText={(text) => setNewCard({ ...newCard, hint: text })}
-                placeholder="A hint to help remember..."
-                multiline
-                numberOfLines={2}
-              />
-              
               <View style={styles.difficultyContainer}>
                 <Text style={styles.difficultyLabel}>Difficulty</Text>
                 <View style={styles.difficultyOptions}>
@@ -1202,15 +1181,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                     placeholder="The answer is..."
                     multiline
                     numberOfLines={3}
-                  />
-                  
-                  <Input
-                    label="Hint (Optional)"
-                    value={editingCard.hint || ''}
-                    onChangeText={(text) => setEditingCard({ ...editingCard, hint: text })}
-                    placeholder="A hint to help remember..."
-                    multiline
-                    numberOfLines={2}
                   />
                   
                   <View style={styles.difficultyContainer}>
@@ -1347,9 +1317,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                   <Text style={styles.aiPreviewCardLabel}>Card {index + 1}</Text>
                   <Text style={styles.aiPreviewQuestion}>Q: {card.question}</Text>
                   <Text style={styles.aiPreviewAnswer}>A: {card.answer}</Text>
-                  {card.hint && (
-                    <Text style={styles.aiPreviewHint}>💡 Hint: {card.hint}</Text>
-                  )}
                 </View>
               ))}
             </ScrollView>
@@ -1946,22 +1913,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
-  hintContainer: {
-    backgroundColor: '#F0F9FF',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  hintLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0369A1',
-    marginBottom: 4,
-  },
-  hintText: {
-    fontSize: 14,
-    color: '#0C4A6E',
-  },
   flashcardStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2200,12 +2151,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151',
     marginBottom: 4,
-  },
-  aiPreviewHint: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    marginTop: 4,
   },
   aiFeaturesModalOverlay: {
     flex: 1,

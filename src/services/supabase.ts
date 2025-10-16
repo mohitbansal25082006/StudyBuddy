@@ -327,30 +327,6 @@ export const deleteFlashcard = async (cardId: string) => {
   return true;
 };
 
-// Get flashcard hint
-export const getFlashcardHint = async (cardId: string) => {
-  const { data, error } = await supabase
-    .from('flashcards')
-    .select('hint')
-    .eq('id', cardId)
-    .single();
-
-  if (error) throw error;
-  return data.hint || '';
-};
-
-// Get flashcard explanation
-export const getFlashcardExplanation = async (cardId: string) => {
-  const { data, error } = await supabase
-    .from('flashcards')
-    .select('explanation')
-    .eq('id', cardId)
-    .single();
-
-  if (error) throw error;
-  return data.explanation || '';
-};
-
 // Get flashcard statistics
 export const getFlashcardStats = async (userId: string) => {
   // Get today's date at midnight
