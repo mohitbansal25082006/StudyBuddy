@@ -20,7 +20,7 @@ import {
   Share,
   Alert,
   Image,
-  TextInput
+  TextInput,
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
@@ -50,6 +50,12 @@ const STUDY_TIPS = [
   "Create a dedicated study space free from distractions",
   "Use active recall techniques for better retention",
   "Teach what you've learned to someone else",
+];
+
+// Subject colors for visual distinction
+const SUBJECT_COLORS = [
+  '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', 
+  '#10B981', '#14B8A6', '#F97316', '#EF4444'
 ];
 
 export const HomeScreen = ({ navigation }: any) => {
@@ -84,6 +90,7 @@ export const HomeScreen = ({ navigation }: any) => {
   const [newGoal, setNewGoal] = useState('');
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -342,46 +349,107 @@ export const HomeScreen = ({ navigation }: any) => {
   };
 
   // Render subject progress item
-  const renderSubjectProgress = ({ item }: { item: SubjectProgress }) => {
+  const renderSubjectProgress = ({ item, index }: { item: SubjectProgress; index: number }) => {
     // Check if this subject is currently being studied
     const isCurrentlyStudying = activeSession?.subject === item.subject && activeSession.isRunning;
     const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
+    const color = SUBJECT_COLORS[index % SUBJECT_COLORS.length];
+    
+    // Calculate progress percentage based on weekly goal
+    const subjectWeeklyMinutes = item.total_minutes; // This would ideally be filtered by week
+    const progressPercentage = Math.min((subjectWeeklyMinutes / 120) * 100, 100); // Assuming 2h per subject weekly
     
     return (
-      <View style={styles.subjectProgressItem}>
+      <TouchableOpacity 
+        style={[
+          styles.subjectProgressItem,
+          isCurrentlyStudying && { 
+            borderColor: color, 
+            borderWidth: 2,
+            shadowColor: color,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }
+        ]}
+        onPress={() => {
+          setSelectedSubject(item.subject);
+          if (isCurrentlyStudying) {
+            navigation.navigate('Subjects');
+          } else {
+            navigation.navigate('Subjects', { subject: item.subject });
+          }
+        }}
+        activeOpacity={0.7}
+      >
         <View style={styles.subjectProgressHeader}>
-          <Text style={styles.subjectProgressName}>{item.subject}</Text>
-          <Text style={styles.subjectProgressTime}>
+          <View style={styles.subjectProgressTitleContainer}>
+            <Text style={[styles.subjectProgressName, { color }]}>{item.subject}</Text>
+            {isCurrentlyStudying && (
+              <View style={[styles.activeIndicator, { backgroundColor: color }]}>
+                <Text style={styles.activeIndicatorText}>LIVE</Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.subjectProgressTime, { color }]}>
             {isCurrentlyStudying && currentSessionTime
               ? formatTime(currentSessionTime)
               : formatStudyTime(item.total_minutes)
             }
           </Text>
         </View>
+        
         <View style={styles.subjectProgressBar}>
           <View 
             style={[
               styles.subjectProgressFill, 
               { 
-                width: `${Math.min((item.total_minutes / 60) + (isCurrentlyStudying ? currentSessionTime / 60 : 0), 100)}%`,
-                backgroundColor: SUBJECT_COLORS[Math.floor(Math.random() * SUBJECT_COLORS.length)]
+                width: `${progressPercentage}%`,
+                backgroundColor: color
               }
             ]} 
           />
         </View>
-        <Text style={styles.subjectProgressStats}>
-          {item.session_count} sessions • {item.flashcard_count} cards • {item.accuracy_rate}% accuracy
-          {isCurrentlyStudying && <Text style={styles.currentlyStudyingText}> • Currently studying</Text>}
-        </Text>
-      </View>
+        
+        <View style={styles.subjectProgressStats}>
+          <View style={styles.subjectProgressStat}>
+            <Text style={styles.subjectProgressStatValue}>{item.session_count}</Text>
+            <Text style={styles.subjectProgressStatLabel}>Sessions</Text>
+          </View>
+          
+          <View style={styles.subjectProgressStat}>
+            <Text style={styles.subjectProgressStatValue}>{item.flashcard_count}</Text>
+            <Text style={styles.subjectProgressStatLabel}>Cards</Text>
+          </View>
+          
+          <View style={styles.subjectProgressStat}>
+            <Text style={styles.subjectProgressStatValue}>{item.accuracy_rate}%</Text>
+            <Text style={styles.subjectProgressStatLabel}>Accuracy</Text>
+          </View>
+          
+          {isCurrentlyStudying && (
+            <View style={styles.subjectProgressStat}>
+              <Text style={styles.subjectProgressStatValue}>{formatTime(currentSessionTime)}</Text>
+              <Text style={styles.subjectProgressStatLabel}>Current</Text>
+            </View>
+          )}
+        </View>
+        
+        {isCurrentlyStudying && (
+          <View style={styles.liveSessionContainer}>
+            <Text style={styles.liveSessionText}>Session in progress</Text>
+            <TouchableOpacity 
+              style={[styles.viewSessionButton, { backgroundColor: color }]}
+              onPress={() => navigation.navigate('Subjects')}
+            >
+              <Text style={styles.viewSessionButtonText}>View</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </TouchableOpacity>
     );
   };
-
-  // Subject colors for progress bars
-  const SUBJECT_COLORS = [
-    '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', 
-    '#10B981', '#14B8A6', '#F97316', '#EF4444'
-  ];
 
   if (loading) {
     return <LoadingSpinner message="Loading your dashboard..." />;
@@ -569,6 +637,16 @@ export const HomeScreen = ({ navigation }: any) => {
             />
           </View>
           
+          {/* Live session indicator in weekly goal */}
+          {activeSession && activeSession.isRunning && (
+            <View style={styles.liveSessionIndicator}>
+              <View style={styles.liveSessionDot} />
+              <Text style={styles.liveSessionText}>
+                Currently studying: {activeSession.subject} - {formatTime(activeSession.duration)}
+              </Text>
+            </View>
+          )}
+          
           <TouchableOpacity 
             onPress={() => setShowTipModal(true)}
             style={styles.tipButton}
@@ -600,7 +678,7 @@ export const HomeScreen = ({ navigation }: any) => {
           <Animated.View style={[styles.subjectProgressContainer, { opacity: fadeAnim }]}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Subject Progress</Text>
-              <TouchableOpacity onPress={() => setShowStatsModal(true)}>
+              <TouchableOpacity onPress={() => navigation.navigate('Subjects')}>
                 <Text style={styles.seeAll}>View All</Text>
               </TouchableOpacity>
             </View>
@@ -874,34 +952,64 @@ export const HomeScreen = ({ navigation }: any) => {
             </View>
             
             <ScrollView style={styles.statsContent}>
-              {subjectProgress.map(subject => {
+              {subjectProgress.map((subject, index) => {
                 // Check if this subject is currently being studied
                 const isCurrentlyStudying = activeSession?.subject === subject.subject && activeSession.isRunning;
                 const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
+                const color = SUBJECT_COLORS[index % SUBJECT_COLORS.length];
                 
                 return (
                   <View key={subject.subject} style={styles.statsSubjectItem}>
-                    <Text style={styles.statsSubjectName}>{subject.subject}</Text>
-                    <View style={styles.statsSubjectDetails}>
-                      <Text style={styles.statsSubjectDetail}>
-                        Total Time: {isCurrentlyStudying && currentSessionTime
-                          ? formatTime(currentSessionTime)
-                          : formatStudyTime(subject.total_minutes)
-                        }
-                      </Text>
-                      <Text style={styles.statsSubjectDetail}>
-                        Sessions: {subject.session_count}
-                      </Text>
-                      <Text style={styles.statsSubjectDetail}>
-                        Flashcards: {subject.flashcard_count}
-                      </Text>
-                      <Text style={styles.statsSubjectDetail}>
-                        Accuracy: {subject.accuracy_rate}%
-                      </Text>
+                    <View style={styles.statsSubjectHeader}>
+                      <Text style={[styles.statsSubjectName, { color }]}>{subject.subject}</Text>
                       {isCurrentlyStudying && (
-                        <Text style={styles.currentlyStudyingDetail}>
-                          Currently studying for {formatTime(currentSessionTime)}
+                        <View style={[styles.statsActiveIndicator, { backgroundColor: color }]}>
+                          <Text style={styles.statsActiveIndicatorText}>LIVE</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    <View style={styles.statsSubjectDetails}>
+                      <View style={styles.statsSubjectDetailRow}>
+                        <Text style={styles.statsSubjectDetailLabel}>Total Time:</Text>
+                        <Text style={styles.statsSubjectDetailValue}>
+                          {isCurrentlyStudying && currentSessionTime
+                            ? formatTime(currentSessionTime)
+                            : formatStudyTime(subject.total_minutes)
+                          }
                         </Text>
+                      </View>
+                      
+                      <View style={styles.statsSubjectDetailRow}>
+                        <Text style={styles.statsSubjectDetailLabel}>Sessions:</Text>
+                        <Text style={styles.statsSubjectDetailValue}>{subject.session_count}</Text>
+                      </View>
+                      
+                      <View style={styles.statsSubjectDetailRow}>
+                        <Text style={styles.statsSubjectDetailLabel}>Flashcards:</Text>
+                        <Text style={styles.statsSubjectDetailValue}>{subject.flashcard_count}</Text>
+                      </View>
+                      
+                      <View style={styles.statsSubjectDetailRow}>
+                        <Text style={styles.statsSubjectDetailLabel}>Accuracy:</Text>
+                        <Text style={styles.statsSubjectDetailValue}>{subject.accuracy_rate}%</Text>
+                      </View>
+                      
+                      {isCurrentlyStudying && (
+                        <View style={styles.statsCurrentSession}>
+                          <Text style={styles.statsCurrentSessionText}>
+                            Currently studying for {formatTime(currentSessionTime)}
+                          </Text>
+                          <TouchableOpacity 
+                            style={[styles.statsViewSessionButton, { backgroundColor: color }]}
+                            onPress={() => {
+                              setShowStatsModal(false);
+                              navigation.navigate('Subjects');
+                            }}
+                          >
+                            <Text style={styles.statsViewSessionButtonText}>View Session</Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
                     </View>
                   </View>
@@ -1188,6 +1296,27 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 4,
   },
+  liveSessionIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  liveSessionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+    marginRight: 8,
+  },
+  liveSessionText: {
+    fontSize: 14,
+    color: '#166534',
+    fontWeight: '500',
+    flex: 1,
+  },
   tipButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#F0FDF4',
@@ -1231,41 +1360,90 @@ const styles = StyleSheet.create({
     borderColor: '#F3F4F6',
   },
   subjectProgressItem: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   subjectProgressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  subjectProgressTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   subjectProgressName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  activeIndicator: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  activeIndicatorText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   subjectProgressTime: {
-    fontSize: 14,
-    color: '#6366F1',
+    fontSize: 16,
     fontWeight: '600',
   },
   subjectProgressBar: {
-    height: 6,
+    height: 8,
     backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    marginBottom: 6,
+    borderRadius: 4,
+    marginBottom: 12,
   },
   subjectProgressFill: {
     height: '100%',
     borderRadius: 3,
   },
   subjectProgressStats: {
-    fontSize: 12,
-    color: '#6B7280',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  currentlyStudyingText: {
-    color: '#10B981',
+  subjectProgressStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  subjectProgressStatValue: {
+    fontSize: 16,
     fontWeight: '600',
+    color: '#374151',
+    marginBottom: 2,
+  },
+  subjectProgressStatLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  liveSessionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    padding: 10,
+    borderRadius: 8,
+  },
+  viewSessionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  viewSessionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   scheduleContainer: {
     backgroundColor: '#FFFFFF',
@@ -1570,24 +1748,66 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
+  statsSubjectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   statsSubjectName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 12,
+  },
+  statsActiveIndicator: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  statsActiveIndicatorText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   statsSubjectDetails: {
     paddingLeft: 8,
   },
-  statsSubjectDetail: {
+  statsSubjectDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  statsSubjectDetailLabel: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 4,
   },
-  currentlyStudyingDetail: {
+  statsSubjectDetailValue: {
     fontSize: 14,
-    color: '#10B981',
     fontWeight: '600',
-    marginBottom: 4,
+    color: '#111827',
+  },
+  statsCurrentSession: {
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statsCurrentSessionText: {
+    fontSize: 14,
+    color: '#166534',
+    fontWeight: '500',
+    flex: 1,
+  },
+  statsViewSessionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  statsViewSessionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
