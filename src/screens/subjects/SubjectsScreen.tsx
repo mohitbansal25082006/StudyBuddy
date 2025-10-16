@@ -74,6 +74,7 @@ export const SubjectsScreen = ({ navigation }: any) => {
     pauseSession, 
     resumeSession, 
     stopSession, 
+    hideSession,
     updateDuration 
   } = useSessionStore();
   
@@ -332,7 +333,7 @@ export const SubjectsScreen = ({ navigation }: any) => {
   const handleStartSession = (subject: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedSubject(subject);
-    startSession(subject, 'study_plan'); // Added the second parameter
+    startSession(subject, 'study_plan');
     setSessionModalVisible(true);
   };
 
@@ -393,6 +394,14 @@ export const SubjectsScreen = ({ navigation }: any) => {
   const handleCancelSession = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     stopSession();
+    setSessionModalVisible(false);
+    setSelectedSubject(null);
+  };
+
+  // Handle closing the modal without stopping the session
+  const handleCloseModal = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    hideSession(); // Hide but don't stop the session
     setSessionModalVisible(false);
     setSelectedSubject(null);
   };
@@ -751,13 +760,13 @@ export const SubjectsScreen = ({ navigation }: any) => {
         animationType="slide"
         transparent={true}
         visible={sessionModalVisible}
-        onRequestClose={handleCancelSession}
+        onRequestClose={handleCloseModal} // Changed from handleCancelSession to handleCloseModal
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.sessionModal, { borderColor: activeSession ? allSubjects.find(s => s.subject === activeSession.subject)?.color : '#6366F1' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Study Session</Text>
-              <TouchableOpacity onPress={handleCancelSession} style={styles.closeButton}>
+              <TouchableOpacity onPress={handleCloseModal} style={styles.closeButton}>
                 <Text style={styles.closeIcon}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -799,6 +808,12 @@ export const SubjectsScreen = ({ navigation }: any) => {
               <Text style={styles.tipText}>• Take breaks every 25 minutes</Text>
               <Text style={styles.tipText}>• Stay hydrated</Text>
               <Text style={styles.tipText}>• Keep your phone away</Text>
+            </View>
+            
+            <View style={styles.minimizeInfo}>
+              <Text style={styles.minimizeInfoText}>
+                💡 You can close this window with the X button and your session will continue running in the background.
+              </Text>
             </View>
           </View>
         </View>
@@ -1384,6 +1399,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     borderRadius: 12,
     padding: 16,
+    marginBottom: 16,
   },
   tipsTitle: {
     fontSize: 14,
@@ -1395,6 +1411,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#15803D',
     marginBottom: 4,
+  },
+  minimizeInfo: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 12,
+  },
+  minimizeInfoText: {
+    fontSize: 12,
+    color: '#92400E',
+    textAlign: 'center',
   },
   sortModalOverlay: {
     flex: 1,
