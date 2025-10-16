@@ -13,12 +13,11 @@ import {
   TouchableOpacity, 
   Dimensions, 
   Modal,
-  FlatList
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getSubjectProgress, getStudySessions, getFlashcards } from '../../services/supabase';
+import { getFlashcards } from '../../services/supabase';
 import { SubjectProgress, StudySession, Flashcard } from '../../types';
 import { ProgressChart } from '../../components/ProgressChart';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -27,17 +26,30 @@ const { width, height } = Dimensions.get('window');
 
 export const ProgressScreen = ({ navigation }: any) => {
   const { user } = useAuthStore();
-  const { subjectProgress, studySessions, fetchSubjectProgress, fetchStudySessions } = useStudyStore();
-  const { activeSession, updateDuration, todayFlashcardReviews, todayCorrectAnswers, todayIncorrectAnswers } = useSessionStore();
+  const { 
+    subjectProgress, 
+    studySessions, 
+    fetchSubjectProgress, 
+    fetchStudySessions,
+    progressLoading 
+  } = useStudyStore();
+  const { 
+    activeSession, 
+    updateDuration, 
+    todayFlashcardReviews, 
+    todayCorrectAnswers, 
+    todayIncorrectAnswers 
+  } = useSessionStore();
   
   const [loading, setLoading] = useState(true);
-  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
-  const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
+  const [chartType, setChartType] = useState<'line' | 'pie'>('line');
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [notReviewedToday, setNotReviewedToday] = useState<Flashcard[]>([]);
   const [reviewedToday, setReviewedToday] = useState<Flashcard[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [showAllSubjects, setShowAllSubjects] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   
   // Set up timer for real-time updates
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -75,11 +87,9 @@ export const ProgressScreen = ({ navigation }: any) => {
       if (!user) return;
       
       try {
+        // Fetch data from study store
         await fetchSubjectProgress(user.id);
-        
-        // Get recent study sessions
-        const sessions = await getStudySessions(user.id, 10);
-        setRecentSessions(sessions);
+        await fetchStudySessions(user.id, 10);
         
         // Get all flashcards
         const allFlashcards = await getFlashcards(user.id);
@@ -100,7 +110,7 @@ export const ProgressScreen = ({ navigation }: any) => {
     };
 
     loadData();
-  }, [user, fetchSubjectProgress]);
+  }, [user, fetchSubjectProgress, fetchStudySessions]);
 
   // Calculate total study time
   const getTotalStudyTime = () => {
@@ -150,7 +160,7 @@ export const ProgressScreen = ({ navigation }: any) => {
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   };
 
   // Handle subject press
@@ -161,10 +171,8 @@ export const ProgressScreen = ({ navigation }: any) => {
 
   // Handle viewing flashcards
   const handleViewFlashcards = () => {
-    // Close the modal first
     setShowSubjectModal(false);
     
-    // Then navigate to flashcards
     if (selectedSubject) {
       navigation.navigate('Flashcards', { subject: selectedSubject });
     } else {
@@ -172,40 +180,38 @@ export const ProgressScreen = ({ navigation }: any) => {
     }
   };
 
-  // Render subject progress item with real-time updates
-  const renderSubjectProgress = ({ item }: { item: SubjectProgress }) => {
-    // Check if this subject is currently being studied
-    const isCurrentlyStudying = activeSession?.subject === item.subject && activeSession.isRunning;
-    const currentSessionTime = isCurrentlyStudying ? activeSession.duration : 0;
-    
-    return (
-      <View style={styles.subjectProgressItem}>
-        <View style={styles.subjectProgressHeader}>
-          <Text style={styles.subjectProgressName}>{item.subject}</Text>
-          <Text style={styles.subjectProgressTime}>
-            {isCurrentlyStudying && currentSessionTime
-              ? formatTime(currentSessionTime)
-              : formatStudyTime(item.total_minutes)
-            }
-          </Text>
-        </View>
-        <View style={styles.subjectProgressBar}>
-          <View 
-            style={[
-              styles.subjectProgressFill, 
-              { 
-                width: `${Math.min((item.total_minutes / 60) + (isCurrentlyStudying ? currentSessionTime / 60 : 0), 100)}%`,
-                backgroundColor: SUBJECT_COLORS[Math.floor(Math.random() * SUBJECT_COLORS.length)]
-              }
-            ]} 
-          />
-        </View>
-        <Text style={styles.subjectProgressStats}>
-          {item.session_count} sessions • {item.flashcard_count} cards • {item.accuracy_rate}% accuracy
-          {isCurrentlyStudying && <Text style={styles.currentlyStudyingText}> • Currently studying</Text>}
-        </Text>
-      </View>
-    );
+  // Get displayed subjects based on show all state
+  const getDisplayedSubjects = () => {
+    if (showAllSubjects) {
+      return subjectProgress;
+    }
+    return subjectProgress.slice(0, 3);
+  };
+
+  // Get displayed sessions based on show all state
+  const getDisplayedSessions = () => {
+    if (showAllSessions) {
+      return studySessions;
+    }
+    return studySessions.slice(0, 3);
+  };
+
+  // Prepare enhanced chart data with study hours for Y-axis
+  const getChartData = (): SubjectProgress[] => {
+    return subjectProgress.map((subject, index) => {
+      const isCurrentlyStudying = activeSession?.subject === subject.subject && activeSession.isRunning;
+      const currentSessionMinutes = isCurrentlyStudying ? Math.floor(activeSession.duration / 60) : 0;
+      const totalMinutes = subject.total_minutes + currentSessionMinutes;
+      
+      // Convert minutes to hours for the chart Y-axis
+      const studyHours = parseFloat((totalMinutes / 60).toFixed(2));
+      
+      return {
+        ...subject,
+        total_minutes: totalMinutes,
+        study_hours: studyHours, // Additional field for charts
+      } as SubjectProgress & { study_hours: number };
+    });
   };
 
   // Subject colors for progress bars
@@ -214,7 +220,7 @@ export const ProgressScreen = ({ navigation }: any) => {
     '#10B981', '#14B8A6', '#F97316', '#EF4444'
   ];
 
-  if (loading) {
+  if (loading || progressLoading) {
     return <LoadingSpinner message="Loading progress data..." />;
   }
 
@@ -293,12 +299,12 @@ export const ProgressScreen = ({ navigation }: any) => {
             
             <View style={styles.flashcardStatItem}>
               <Text style={styles.flashcardStatValue}>{notReviewedToday.length}</Text>
-              <Text style={styles.flashcardStatLabel}>Not Reviewed Today</Text>
+              <Text style={styles.flashcardStatLabel}>Not Reviewed</Text>
             </View>
             
             <View style={styles.flashcardStatItem}>
               <Text style={styles.flashcardStatValue}>{reviewedToday.length}</Text>
-              <Text style={styles.flashcardStatLabel}>Reviewed Today</Text>
+              <Text style={styles.flashcardStatLabel}>Reviewed</Text>
             </View>
           </View>
         </View>
@@ -307,23 +313,6 @@ export const ProgressScreen = ({ navigation }: any) => {
         <View style={styles.chartTypeContainer}>
           <Text style={styles.sectionTitle}>Progress Visualization</Text>
           <View style={styles.chartTypeButtons}>
-            <TouchableOpacity
-              style={[
-                styles.chartTypeButton,
-                chartType === 'bar' && styles.selectedChartTypeButton,
-              ]}
-              onPress={() => setChartType('bar')}
-            >
-              <Text
-                style={[
-                  styles.chartTypeButtonText,
-                  chartType === 'bar' && styles.selectedChartTypeButtonText,
-                ]}
-              >
-                Bar
-              </Text>
-            </TouchableOpacity>
-            
             <TouchableOpacity
               style={[
                 styles.chartTypeButton,
@@ -360,14 +349,30 @@ export const ProgressScreen = ({ navigation }: any) => {
           </View>
         </View>
 
-        {/* Progress Chart */}
-        <ProgressChart data={subjectProgress} type={chartType} />
+        {/* Progress Chart with Study Hours Data */}
+        {subjectProgress.length > 0 ? (
+          <ProgressChart data={getChartData()} type={chartType} />
+        ) : (
+          <View style={styles.emptyChartContainer}>
+            <Text style={styles.emptyText}>No data to display</Text>
+            <Text style={styles.emptySubtext}>Start studying to see your progress chart</Text>
+          </View>
+        )}
 
         {/* Subject Progress */}
         <View style={styles.subjectsContainer}>
-          <Text style={styles.sectionTitle}>Subject Progress</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Subject Progress</Text>
+            {subjectProgress.length > 3 && (
+              <TouchableOpacity onPress={() => setShowAllSubjects(!showAllSubjects)}>
+                <Text style={styles.viewAllButton}>
+                  {showAllSubjects ? 'View Less' : 'View All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {subjectProgress.length > 0 ? (
-            subjectProgress.map(subject => (
+            getDisplayedSubjects().map((subject, index) => (
               <View key={subject.subject} style={styles.subjectItem}>
                 <View style={styles.subjectItemHeader}>
                   <Text style={styles.subjectItemName}>{subject.subject}</Text>
@@ -377,6 +382,17 @@ export const ProgressScreen = ({ navigation }: any) => {
                       : formatStudyTime(subject.total_minutes)
                     }
                   </Text>
+                </View>
+                <View style={styles.subjectProgressBar}>
+                  <View 
+                    style={[
+                      styles.subjectProgressFill, 
+                      { 
+                        width: `${Math.min((subject.total_minutes / 180) * 100, 100)}%`,
+                        backgroundColor: SUBJECT_COLORS[index % SUBJECT_COLORS.length]
+                      }
+                    ]} 
+                  />
                 </View>
                 <View style={styles.subjectItemStats}>
                   <Text style={styles.subjectItemStat}>
@@ -390,7 +406,7 @@ export const ProgressScreen = ({ navigation }: any) => {
                   </Text>
                   {activeSession?.subject === subject.subject && activeSession.isRunning && (
                     <Text style={styles.currentlyStudyingStat}>
-                      Currently studying
+                      • Currently studying
                     </Text>
                   )}
                 </View>
@@ -414,25 +430,53 @@ export const ProgressScreen = ({ navigation }: any) => {
 
         {/* Recent Sessions */}
         <View style={styles.sessionsContainer}>
-          <Text style={styles.sectionTitle}>Recent Study Sessions</Text>
-          {recentSessions.length > 0 ? (
-            recentSessions.map(session => (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Study Sessions</Text>
+            {studySessions.length > 3 && (
+              <TouchableOpacity onPress={() => setShowAllSessions(!showAllSessions)}>
+                <Text style={styles.viewAllButton}>
+                  {showAllSessions ? 'View Less' : 'View All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {studySessions.length > 0 ? (
+            getDisplayedSessions().map((session, index) => (
               <View key={session.id} style={styles.sessionCard}>
                 <View style={styles.sessionHeader}>
-                  <Text style={styles.sessionSubject}>{session.subject}</Text>
+                  <View style={styles.sessionSubjectContainer}>
+                    <Text style={styles.sessionSubject}>{session.subject}</Text>
+                    <View style={styles.sessionTypeBadge}>
+                      <Text style={styles.sessionTypeText}>
+                        {session.session_type.replace('_', ' ')}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.sessionDuration}>{formatStudyTime(session.duration_minutes)}</Text>
                 </View>
-                <Text style={styles.sessionType}>
-                  {session.session_type.replace('_', ' ')}
-                </Text>
-                <Text style={styles.sessionDate}>
-                  {new Date(session.completed_at).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit'
-                  })}
-                </Text>
+                <View style={styles.sessionFooter}>
+                  <Text style={styles.sessionDate}>
+                    {new Date(session.completed_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    })}
+                  </Text>
+                  <View style={styles.sessionProgress}>
+                    <View style={styles.sessionProgressBar}>
+                      <View 
+                        style={[
+                          styles.sessionProgressFill, 
+                          { 
+                            width: `${Math.min((session.duration_minutes / 60) * 100, 100)}%`,
+                            backgroundColor: SUBJECT_COLORS[index % SUBJECT_COLORS.length]
+                          }
+                        ]} 
+                      />
+                    </View>
+                  </View>
+                </View>
               </View>
             ))
           ) : (
@@ -463,7 +507,7 @@ export const ProgressScreen = ({ navigation }: any) => {
             </View>
             
             {selectedSubject && (
-              <>
+              <ScrollView style={styles.modalScroll}>
                 <View style={styles.subjectDetailHeader}>
                   <Text style={styles.subjectDetailName}>{selectedSubject}</Text>
                 </View>
@@ -475,6 +519,13 @@ export const ProgressScreen = ({ navigation }: any) => {
                       {formatStudyTime(
                         subjectProgress.find(s => s.subject === selectedSubject)?.total_minutes || 0
                       )}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.subjectDetailStat}>
+                    <Text style={styles.subjectDetailStatLabel}>Study Hours</Text>
+                    <Text style={styles.subjectDetailStatValue}>
+                      {((subjectProgress.find(s => s.subject === selectedSubject)?.total_minutes || 0) / 60).toFixed(1)}h
                     </Text>
                   </View>
                   
@@ -522,7 +573,7 @@ export const ProgressScreen = ({ navigation }: any) => {
                     <Text style={styles.subjectDetailButtonText}>View Flashcards</Text>
                   </TouchableOpacity>
                 </View>
-              </>
+              </ScrollView>
             )}
           </View>
         </View>
@@ -593,7 +644,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#111827',
   },
@@ -618,13 +669,13 @@ const styles = StyleSheet.create({
     borderColor: '#F3F4F6',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#6366F1',
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6B7280',
     textAlign: 'center',
   },
@@ -652,18 +703,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 16,
   },
   flashcardStatItem: {
     width: '48%',
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
-    padding: 12,
+    padding: 16,
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   flashcardStatValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#6366F1',
     marginBottom: 4,
@@ -676,25 +726,35 @@ const styles = StyleSheet.create({
   chartTypeContainer: {
     marginBottom: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 16,
+  },
+  viewAllButton: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366F1',
   },
   chartTypeButtons: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginTop: 12,
   },
   chartTypeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 30,
+    paddingVertical: 10,
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 20,
-    marginHorizontal: 4,
+    marginHorizontal: 10,
   },
   selectedChartTypeButton: {
     backgroundColor: '#6366F1',
@@ -707,6 +767,20 @@ const styles = StyleSheet.create({
   },
   selectedChartTypeButtonText: {
     color: '#FFFFFF',
+  },
+  emptyChartContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 40,
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   subjectsContainer: {
     backgroundColor: '#FFFFFF',
@@ -726,22 +800,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366F1',
   },
   subjectItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   subjectItemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+    flex: 1,
   },
   subjectItemTime: {
     fontSize: 14,
     color: '#6366F1',
     fontWeight: '600',
+  },
+  subjectProgressBar: {
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  subjectProgressFill: {
+    height: '100%',
+    borderRadius: 4,
   },
   subjectItemStats: {
     flexDirection: 'row',
@@ -774,43 +862,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  subjectProgressItem: {
-    marginBottom: 16,
-  },
-  subjectProgressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  subjectProgressName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  subjectProgressTime: {
-    fontSize: 14,
-    color: '#6366F1',
-    fontWeight: '600',
-  },
-  subjectProgressBar: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    marginBottom: 6,
-  },
-  subjectProgressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  subjectProgressStats: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  currentlyStudyingText: {
-    color: '#10B981',
-    fontWeight: '600',
-  },
   sessionsContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -828,49 +879,76 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 8,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366F1',
   },
   sessionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 12,
+  },
+  sessionSubjectContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sessionSubject: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+    marginRight: 8,
+  },
+  sessionTypeBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sessionTypeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#6366F1',
+    textTransform: 'capitalize',
   },
   sessionDuration: {
     fontSize: 14,
     fontWeight: '600',
     color: '#6366F1',
   },
-  sessionType: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
-    textTransform: 'capitalize',
+  sessionFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   sessionDate: {
     fontSize: 12,
     color: '#9CA3AF',
   },
+  sessionProgress: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  sessionProgressBar: {
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  sessionProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
   emptyContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 32,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
   },
   emptyText: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#6B7280',
     marginBottom: 8,
     textAlign: 'center',
@@ -898,11 +976,17 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
+  modalScroll: {
+    maxHeight: '100%',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   modalTitle: {
     fontSize: 24,
@@ -910,51 +994,57 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   closeButton: {
-    fontSize: 24,
+    fontSize: 28,
     color: '#6B7280',
+    fontWeight: '300',
   },
   subjectDetailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    paddingVertical: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
   },
   subjectDetailName: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#111827',
+    color: '#6366F1',
   },
   subjectDetailStats: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   subjectDetailStat: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    marginBottom: 8,
   },
   subjectDetailStatLabel: {
     fontSize: 14,
     color: '#6B7280',
+    fontWeight: '500',
   },
   subjectDetailStatValue: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#111827',
   },
   subjectDetailActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    marginTop: 8,
   },
   subjectDetailButton: {
-    flex: 1,
     backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   subjectDetailButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
   },
