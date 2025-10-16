@@ -759,17 +759,6 @@ export const HomeScreen = ({ navigation }: any) => {
                   }}
                   style={styles.profileActionButton}
                 />
-                
-                <Button
-                  title="Settings"
-                  onPress={() => {
-                    setShowProfileModal(false);
-                    // Navigate to settings when implemented
-                    Alert.alert('Coming Soon', 'Settings will be available in a future update');
-                  }}
-                  variant="outline"
-                  style={styles.profileActionButton}
-                />
               </View>
             </View>
           </View>
