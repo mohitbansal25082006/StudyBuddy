@@ -1,6 +1,6 @@
 // F:\StudyBuddy\src\screens\flashcards\FlashcardsScreen.tsx
 // ============================================
-// FLASHCARDS SCREEN - ADVANCED VERSION
+// FLASHCARDS SCREEN - FIXED VERSION
 // Smart flashcard system with spaced repetition and advanced features
 // ============================================
 
@@ -21,7 +21,8 @@ import {
   Share,
   StatusBar,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
@@ -364,20 +365,46 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     }
 
     setGenerating(true);
+    setAiPreviewCards([]);
+    
     try {
-      // Generate flashcard content
-      const generatedCards = await generateFlashcardContent(
+      console.log('Starting flashcard generation...');
+      
+      // Generate flashcard content with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timed out')), 30000)
+      );
+      
+      const generationPromise = generateFlashcardContent(
         generateForm.subject,
         generateForm.topic,
         generateForm.count
       );
+      
+      const generatedCards = await Promise.race([generationPromise, timeoutPromise]) as Array<{question: string, answer: string}>;
+      
+      console.log('Flashcards generated successfully:', generatedCards.length);
 
-      // Set preview cards
+      // Set preview cards and show modal
       setAiPreviewCards(generatedCards);
+      setShowGenerateModal(false);
       setShowAIPreviewModal(true);
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error: any) {
       console.error('Error generating flashcards:', error);
-      Alert.alert('Error', error.message || 'Failed to generate flashcards');
+      
+      let errorMessage = 'Failed to generate flashcards';
+      if (error.message.includes('timeout')) {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (error.message.includes('API key')) {
+        errorMessage = 'API key not configured. Please check your settings.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error', errorMessage);
+      setShowGenerateModal(false);
     } finally {
       setGenerating(false);
     }
@@ -387,9 +414,13 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const handleConfirmAIGeneratedCards = async () => {
     if (!user) return;
     
+    setAdding(true);
+    
     try {
       const now = new Date();
       const nextReview = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // 1 day from now
+      
+      console.log(`Adding ${aiPreviewCards.length} flashcards to database...`);
       
       // Add each generated flashcard to the database
       for (const card of aiPreviewCards) {
@@ -411,7 +442,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
       });
       
       setShowAIPreviewModal(false);
-      setShowGenerateModal(false);
+      setAiPreviewCards([]);
       
       // Refresh flashcards
       await fetchFlashcards(user.id, selectedSubject || undefined);
@@ -422,6 +453,8 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
     } catch (error: any) {
       console.error('Error adding generated flashcards:', error);
       Alert.alert('Error', error.message || 'Failed to add generated flashcards');
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -662,7 +695,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
   const renderFlashcardItem = ({ item, index }: { item: Flashcard; index: number }) => {
     const isExpanded = expandedCard === item.id;
     const isSelected = selectedCards.includes(item.id);
-    // Fixed: Ensure review_count is a number and handle division safely
     const reviewCount = typeof item.review_count === 'number' ? item.review_count : 0;
     const correctCount = typeof item.correct_count === 'number' ? item.correct_count : 0;
     const accuracy = reviewCount > 0 ? Math.round((correctCount / reviewCount) * 100) : 0;
@@ -1234,7 +1266,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         animationType="slide"
         transparent={true}
         visible={showGenerateModal}
-        onRequestClose={() => setShowGenerateModal(false)}
+        onRequestClose={() => !generating && setShowGenerateModal(false)}
       >
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
@@ -1249,47 +1281,59 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
             >
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Generate Flashcards with AI</Text>
-                <TouchableOpacity onPress={() => setShowGenerateModal(false)}>
-                  <Text style={styles.closeButton}>✕</Text>
-                </TouchableOpacity>
+                {!generating && (
+                  <TouchableOpacity onPress={() => setShowGenerateModal(false)}>
+                    <Text style={styles.closeButton}>✕</Text>
+                  </TouchableOpacity>
+                )}
               </View>
               
-              <Input
-                label="Subject"
-                value={generateForm.subject}
-                onChangeText={(text) => setGenerateForm({ ...generateForm, subject: text })}
-                placeholder="e.g., Mathematics"
-              />
-              
-              <Input
-                label="Topic"
-                value={generateForm.topic}
-                onChangeText={(text) => setGenerateForm({ ...generateForm, topic: text })}
-                placeholder="e.g., Algebra, World War II, etc."
-              />
-              
-              <Input
-                label="Number of Flashcards"
-                value={generateForm.count.toString()}
-                onChangeText={(text) => setGenerateForm({ ...generateForm, count: parseInt(text) || 5 })}
-                placeholder="5"
-                keyboardType="numeric"
-              />
-              
-              <View style={styles.modalActions}>
-                <Button
-                  title="Cancel"
-                  onPress={() => setShowGenerateModal(false)}
-                  variant="outline"
-                  style={styles.modalButton}
-                />
-                <Button
-                  title="Generate"
-                  onPress={handleGenerateFlashcards}
-                  loading={generating}
-                  style={styles.modalButton}
-                />
-              </View>
+              {generating ? (
+                <View style={styles.generatingContainer}>
+                  <ActivityIndicator size="large" color="#6366F1" />
+                  <Text style={styles.generatingText}>Generating flashcards...</Text>
+                  <Text style={styles.generatingSubtext}>This may take a few moments</Text>
+                </View>
+              ) : (
+                <>
+                  <Input
+                    label="Subject"
+                    value={generateForm.subject}
+                    onChangeText={(text) => setGenerateForm({ ...generateForm, subject: text })}
+                    placeholder="e.g., Mathematics"
+                  />
+                  
+                  <Input
+                    label="Topic"
+                    value={generateForm.topic}
+                    onChangeText={(text) => setGenerateForm({ ...generateForm, topic: text })}
+                    placeholder="e.g., Algebra, World War II, etc."
+                  />
+                  
+                  <Input
+                    label="Number of Flashcards"
+                    value={generateForm.count.toString()}
+                    onChangeText={(text) => setGenerateForm({ ...generateForm, count: parseInt(text) || 5 })}
+                    placeholder="5"
+                    keyboardType="numeric"
+                  />
+                  
+                  <View style={styles.modalActions}>
+                    <Button
+                      title="Cancel"
+                      onPress={() => setShowGenerateModal(false)}
+                      variant="outline"
+                      style={styles.modalButton}
+                    />
+                    <Button
+                      title="Generate"
+                      onPress={handleGenerateFlashcards}
+                      loading={generating}
+                      style={styles.modalButton}
+                    />
+                  </View>
+                </>
+              )}
             </ScrollView>
           </KeyboardAvoidingView>
         </View>
@@ -1300,15 +1344,17 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         animationType="slide"
         transparent={true}
         visible={showAIPreviewModal}
-        onRequestClose={() => setShowAIPreviewModal(false)}
+        onRequestClose={() => !adding && setShowAIPreviewModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.aiPreviewModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>AI Generated Flashcards</Text>
-              <TouchableOpacity onPress={() => setShowAIPreviewModal(false)}>
-                <Text style={styles.closeButton}>✕</Text>
-              </TouchableOpacity>
+              {!adding && (
+                <TouchableOpacity onPress={() => setShowAIPreviewModal(false)}>
+                  <Text style={styles.closeButton}>✕</Text>
+                </TouchableOpacity>
+              )}
             </View>
             
             <ScrollView style={styles.aiPreviewContainer}>
@@ -1321,19 +1367,26 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
               ))}
             </ScrollView>
             
-            <View style={styles.modalActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowAIPreviewModal(false)}
-                variant="outline"
-                style={styles.modalButton}
-              />
-              <Button
-                title="Add All"
-                onPress={handleConfirmAIGeneratedCards}
-                style={styles.modalButton}
-              />
-            </View>
+            {adding ? (
+              <View style={styles.addingContainer}>
+                <ActivityIndicator size="small" color="#6366F1" />
+                <Text style={styles.addingText}>Adding flashcards to your collection...</Text>
+              </View>
+            ) : (
+              <View style={styles.modalActions}>
+                <Button
+                  title="Cancel"
+                  onPress={() => setShowAIPreviewModal(false)}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <Button
+                  title="Add All"
+                  onPress={handleConfirmAIGeneratedCards}
+                  style={styles.modalButton}
+                />
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -1386,7 +1439,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
         <TouchableOpacity
           style={styles.optimizeModalOverlay}
           activeOpacity={1}
-          onPress={() => setShowOptimizeModal(false)}
+          onPress={() => !optimizing && setShowOptimizeModal(false)}
         >
           <View style={styles.optimizeModalContent}>
             <Text style={styles.optimizeModalTitle}>Optimize Study Schedule</Text>
@@ -1400,6 +1453,7 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
                 onPress={() => setShowOptimizeModal(false)}
                 variant="outline"
                 style={styles.optimizeModalButton}
+                disabled={optimizing}
               />
               <Button
                 title="Optimize"
@@ -1455,99 +1509,6 @@ export const FlashcardsScreen = ({ navigation, route }: any) => {
             ))}
           </View>
         </TouchableOpacity>
-      </Modal>
-
-      {/* Stats Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showStatsModal}
-        onRequestClose={() => setShowStatsModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.statsModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Flashcard Statistics</Text>
-              <TouchableOpacity onPress={() => setShowStatsModal(false)}>
-                <Text style={styles.closeButton}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.statsModalContent}>
-              <View style={styles.statsModalSection}>
-                <Text style={styles.statsModalSectionTitle}>Overview</Text>
-                <View style={styles.statsModalGrid}>
-                  <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{filteredFlashcards.length}</Text>
-                    <Text style={styles.statsModalLabel}>Total Cards</Text>
-                  </View>
-                  
-                  <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{dueFlashcards.length}</Text>
-                    <Text style={styles.statsModalLabel}>Due Today</Text>
-                  </View>
-                  
-                  <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{learningFlashcards.length}</Text>
-                    <Text style={styles.statsModalLabel}>Learning</Text>
-                  </View>
-                  
-                  <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{studyStreak}</Text>
-                    <Text style={styles.statsModalLabel}>Day Streak</Text>
-                  </View>
-                  
-                  <View style={styles.statsModalItem}>
-                    <Text style={styles.statsModalValue}>{todayFlashcardReviews}</Text>
-                    <Text style={styles.statsModalLabel}>Reviewed Today</Text>
-                  </View>
-                </View>
-              </View>
-              
-              {subjects.length > 0 && (
-                <View style={styles.statsModalSection}>
-                  <Text style={styles.statsModalSectionTitle}>By Subject</Text>
-                  {subjects.map(subject => {
-                    const subjectCards = filteredFlashcards.filter(card => card.subject === subject);
-                    const subjectDue = dueFlashcards.filter(card => card.subject === subject);
-                    
-                    return (
-                      <View key={subject} style={styles.subjectStatsItem}>
-                        <View style={styles.subjectStatsHeader}>
-                          <Text style={[styles.subjectStatsName, { color: getSubjectColor(subject) }]}>
-                            {subject}
-                          </Text>
-                          <Text style={styles.subjectStatsCount}>{subjectCards.length} cards</Text>
-                        </View>
-                        
-                        <View style={styles.subjectStatsBars}>
-                          <View style={styles.subjectStatsBar}>
-                            <View 
-                              style={[
-                                styles.subjectStatsBarFill, 
-                                { 
-                                  width: `${(subjectDue.length / Math.max(subjectCards.length, 1)) * 100}%`,
-                                  backgroundColor: '#F59E0B'
-                                }
-                              ]} 
-                            />
-                          </View>
-                        </View>
-                        
-                        <View style={styles.subjectStatsLegend}>
-                          <View style={styles.subjectStatsLegendItem}>
-                            <View style={[styles.subjectStatsLegendColor, { backgroundColor: '#F59E0B' }]} />
-                            <Text style={styles.subjectStatsLegendText}>Due: {subjectDue.length}</Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
       </Modal>
 
       {/* Tip Modal */}
@@ -2113,6 +2074,32 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 8,
   },
+  generatingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  generatingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginTop: 16,
+  },
+  generatingSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 8,
+  },
+  addingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  addingText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 12,
+  },
   aiPreviewModalContent: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -2258,105 +2245,6 @@ const styles = StyleSheet.create({
   selectedSortOptionText: {
     color: '#6366F1',
     fontWeight: '600',
-  },
-  statsModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    width: '90%',
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  statsModalContent: {
-    flex: 1,
-  },
-  statsModalSection: {
-    marginBottom: 24,
-  },
-  statsModalSectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  statsModalGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statsModalItem: {
-    width: '48%',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  statsModalValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#6366F1',
-    marginBottom: 4,
-  },
-  statsModalLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  subjectStatsItem: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  subjectStatsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  subjectStatsName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  subjectStatsCount: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  subjectStatsBars: {
-    marginBottom: 8,
-  },
-  subjectStatsBar: {
-    height: 6,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3,
-    marginBottom: 4,
-  },
-  subjectStatsBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  subjectStatsLegend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  subjectStatsLegendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  subjectStatsLegendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 6,
-  },
-  subjectStatsLegendText: {
-    fontSize: 12,
-    color: '#6B7280',
   },
   tipModalOverlay: {
     flex: 1,

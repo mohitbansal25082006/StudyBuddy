@@ -138,6 +138,8 @@ export const generateFlashcardContent = async (
   `;
 
   try {
+    console.log('Generating flashcards with OpenAI...');
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -161,20 +163,74 @@ export const generateFlashcardContent = async (
       }),
     });
 
+    console.log('OpenAI response status:', response.status);
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('OpenAI API error:', errorData);
+      throw new Error(`OpenAI API error: ${errorData.error?.message || `HTTP ${response.status}`}`);
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    console.log('OpenAI response received');
+    
+    let content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('No content received from OpenAI');
+    }
+    
+    // Clean up the response to ensure it's valid JSON
+    content = content.trim();
+    
+    // Remove any potential markdown code block markers
+    if (content.startsWith('```json')) {
+      content = content.replace(/```json\n?/, '');
+    }
+    if (content.startsWith('```')) {
+      content = content.replace(/```\n?/, '');
+    }
+    if (content.endsWith('```')) {
+      content = content.replace(/\n?```$/, '');
+    }
+    
+    console.log('Parsing flashcards...');
     
     // Parse the JSON response
     try {
       const flashcards = JSON.parse(content);
+      
+      // Validate the structure of the response
+      if (!Array.isArray(flashcards)) {
+        console.error('Response is not an array:', flashcards);
+        throw new Error('Invalid response format: expected an array');
+      }
+      
+      // Ensure each flashcard has the required properties
+      for (const card of flashcards) {
+        if (!card.question || !card.answer) {
+          console.error('Invalid flashcard:', card);
+          throw new Error('Flashcard missing required properties');
+        }
+      }
+      
+      console.log(`Successfully generated ${flashcards.length} flashcards`);
       return flashcards;
     } catch (parseError) {
       console.error('Failed to parse OpenAI response:', content);
+      
+      // If parsing fails, try to extract JSON from the response
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const flashcards = JSON.parse(jsonMatch[0]);
+          console.log(`Successfully extracted ${flashcards.length} flashcards`);
+          return flashcards;
+        } catch (e) {
+          console.error('Failed to parse extracted JSON:', e);
+        }
+      }
+      
       throw new Error('Failed to parse flashcards from AI response');
     }
   } catch (error) {
@@ -303,7 +359,6 @@ export const categorizeFlashcardsWithAI = async (flashcards: any[]): Promise<any
     throw new Error('OpenAI API key is not configured');
   }
 
-  // Extract questions and answers for analysis
   const cardData = flashcards.map(card => ({
     id: card.id,
     question: card.question,
@@ -363,14 +418,33 @@ export const categorizeFlashcardsWithAI = async (flashcards: any[]): Promise<any
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
     
-    // Parse the JSON response
+    content = content.trim();
+    
+    if (content.startsWith('```json')) {
+      content = content.replace(/```json\n?/, '');
+    }
+    if (content.endsWith('```')) {
+      content = content.replace(/\n?```$/, '');
+    }
+    
     try {
       const categorizedCards = JSON.parse(content);
       return categorizedCards;
     } catch (parseError) {
       console.error('Failed to parse OpenAI response:', content);
+      
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const categorizedCards = JSON.parse(jsonMatch[0]);
+          return categorizedCards;
+        } catch (e) {
+          console.error('Failed to parse extracted JSON:', e);
+        }
+      }
+      
       throw new Error('Failed to parse categorization from AI response');
     }
   } catch (error) {
@@ -385,7 +459,6 @@ export const optimizeStudySchedule = async (flashcards: any[], learningStyle: st
     throw new Error('OpenAI API key is not configured');
   }
 
-  // Extract relevant data for analysis
   const cardData = flashcards.map(card => ({
     id: card.id,
     question: card.question,
@@ -451,14 +524,33 @@ export const optimizeStudySchedule = async (flashcards: any[], learningStyle: st
     }
 
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    let content = data.choices[0].message.content;
     
-    // Parse the JSON response
+    content = content.trim();
+    
+    if (content.startsWith('```json')) {
+      content = content.replace(/```json\n?/, '');
+    }
+    if (content.endsWith('```')) {
+      content = content.replace(/\n?```$/, '');
+    }
+    
     try {
       const optimizedSchedule = JSON.parse(content);
       return optimizedSchedule;
     } catch (parseError) {
       console.error('Failed to parse OpenAI response:', content);
+      
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const optimizedSchedule = JSON.parse(jsonMatch[0]);
+          return optimizedSchedule;
+        } catch (e) {
+          console.error('Failed to parse extracted JSON:', e);
+        }
+      }
+      
       throw new Error('Failed to parse optimized schedule from AI response');
     }
   } catch (error) {
