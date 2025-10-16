@@ -14,11 +14,19 @@ import {
   Dimensions,
   TouchableOpacity,
   Modal,
-  StatusBar
+  StatusBar,
+  Image,
+  Vibration
 } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getFlashcardsForReview, updateFlashcard, createStudySession } from '../../services/supabase';
+import { 
+  getFlashcardsForReview, 
+  updateFlashcard, 
+  createStudySession,
+  getFlashcardHint,
+  getFlashcardExplanation
+} from '../../services/supabase';
 import { Flashcard as FlashcardType } from '../../types';
 import { Button } from '../../components/Button';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -33,6 +41,9 @@ const REVIEW_TIPS = [
   "If you get a card wrong, review it more frequently",
   "Connect new information with what you already know",
   "Take short breaks between review sessions",
+  "Focus on understanding rather than memorization",
+  "Use visual cues to help remember information",
+  "Explain the concept in your own words",
 ];
 
 export const FlashcardReviewScreen = ({ route, navigation }: any) => {
@@ -44,6 +55,8 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const [flashcards, setFlashcards] = useState<FlashcardType[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
   const [reviewStartTime, setReviewStartTime] = useState<Date | null>(null);
   const [reviewStats, setReviewStats] = useState({
     total: 0,
@@ -53,6 +66,8 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     easy: 0,
     medium: 0,
     hard: 0,
+    hintsUsed: 0,
+    explanationsUsed: 0,
   });
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -61,6 +76,16 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const [sessionPaused, setSessionPaused] = useState(false);
   const [flipAnimation, setFlipAnimation] = useState(new Animated.Value(0));
   const [progressAnimation, setProgressAnimation] = useState(new Animated.Value(0));
+  const [sessionTime, setSessionTime] = useState(0);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
+  const [cardStartTime, setCardStartTime] = useState<Date | null>(null);
+  const [cardTimes, setCardTimes] = useState<number[]>([]);
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [reviewMode, setReviewMode] = useState<'normal' | 'difficult' | 'new'>('normal');
+  const [aiHint, setAiHint] = useState('');
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [generatingHint, setGeneratingHint] = useState(false);
+  const [generatingExplanation, setGeneratingExplanation] = useState(false);
   
   // Load flashcards for review
   useEffect(() => {
@@ -69,18 +94,38 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
       
       try {
         // Get all flashcards for the subject, not just due ones
-        const allSubjectCards = await getFlashcardsForReview(user.id, subject);
+        let allSubjectCards = await getFlashcardsForReview(user.id, subject);
         
         // If no flashcards for this subject, show appropriate message
         if (allSubjectCards.length === 0) {
           setFlashcards([]);
           setReviewStats(prev => ({ ...prev, total: 0 }));
         } else {
-          setFlashcards(allSubjectCards);
-          setReviewStats(prev => ({ ...prev, total: allSubjectCards.length }));
+          // Filter based on review mode
+          let filteredCards = allSubjectCards;
+          
+          if (reviewMode === 'difficult') {
+            // Show cards with difficulty >= 4 or accuracy < 70%
+            filteredCards = allSubjectCards.filter(card => {
+              const accuracy = card.review_count > 0 ? (card.correct_count / card.review_count) : 0;
+              return card.difficulty >= 4 || accuracy < 0.7;
+            });
+          } else if (reviewMode === 'new') {
+            // Show cards that have never been reviewed
+            filteredCards = allSubjectCards.filter(card => card.review_count === 0);
+          }
+          
+          // If filtered cards is empty, fall back to all cards
+          if (filteredCards.length === 0) {
+            filteredCards = allSubjectCards;
+          }
+          
+          setFlashcards(filteredCards);
+          setReviewStats(prev => ({ ...prev, total: filteredCards.length }));
         }
         
         setReviewStartTime(new Date());
+        setCardStartTime(new Date());
         
         // Set random tip
         const randomTip = REVIEW_TIPS[Math.floor(Math.random() * REVIEW_TIPS.length)];
@@ -90,6 +135,12 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         if (!activeSession || activeSession.type !== 'flashcards') {
           startSession(subject || 'Mixed', 'flashcards');
         }
+        
+        // Start timer
+        const interval = setInterval(() => {
+          setSessionTime(prev => prev + 1);
+        }, 1000);
+        setTimerInterval(interval);
       } catch (error) {
         console.error('Error loading flashcards:', error);
         Alert.alert('Error', 'Failed to load flashcards');
@@ -100,7 +151,14 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     };
 
     loadFlashcards();
-  }, [user, subject, navigation, activeSession, startSession]);
+    
+    // Cleanup timer on unmount
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [user, subject, navigation, activeSession, startSession, reviewMode]);
 
   // Update progress animation
   useEffect(() => {
@@ -127,12 +185,74 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     setShowAnswer(!showAnswer);
   }, [showAnswer, flipAnimation]);
 
+  // Handle showing hint
+  const handleShowHint = async () => {
+    if (!flashcards[currentCardIndex]) return;
+    
+    const currentCard = flashcards[currentCardIndex];
+    
+    if (currentCard.hint) {
+      setShowHint(true);
+      setReviewStats(prev => ({ ...prev, hintsUsed: prev.hintsUsed + 1 }));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      // Generate AI hint
+      setGeneratingHint(true);
+      try {
+        const hint = await getFlashcardHint(currentCard.id);
+        setAiHint(hint);
+        setShowHint(true);
+        setReviewStats(prev => ({ ...prev, hintsUsed: prev.hintsUsed + 1 }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (error) {
+        console.error('Error generating hint:', error);
+        Alert.alert('Error', 'Failed to generate hint');
+      } finally {
+        setGeneratingHint(false);
+      }
+    }
+  };
+
+  // Handle showing explanation
+  const handleShowExplanation = async () => {
+    if (!flashcards[currentCardIndex]) return;
+    
+    const currentCard = flashcards[currentCardIndex];
+    
+    if (currentCard.explanation) {
+      setShowExplanation(true);
+      setReviewStats(prev => ({ ...prev, explanationsUsed: prev.explanationsUsed + 1 }));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } else {
+      // Generate AI explanation
+      setGeneratingExplanation(true);
+      try {
+        const explanation = await getFlashcardExplanation(currentCard.id);
+        setAiExplanation(explanation);
+        setShowExplanation(true);
+        setReviewStats(prev => ({ ...prev, explanationsUsed: prev.explanationsUsed + 1 }));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (error) {
+        console.error('Error generating explanation:', error);
+        Alert.alert('Error', 'Failed to generate explanation');
+      } finally {
+        setGeneratingExplanation(false);
+      }
+    }
+  };
+
   // Handle card answer with difficulty rating
   const handleAnswer = async (difficulty: 'easy' | 'medium' | 'hard') => {
     if (!user || flashcards.length === 0) return;
 
     const currentCard = flashcards[currentCardIndex];
     const isCorrect = difficulty !== 'hard';
+    
+    // Record card time
+    if (cardStartTime) {
+      const cardTime = Math.floor((new Date().getTime() - cardStartTime.getTime()) / 1000);
+      setCardTimes([...cardTimes, cardTime]);
+    }
     
     try {
       // Calculate next review time based on spaced repetition algorithm
@@ -207,6 +327,11 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         useNativeDriver: true,
       }).start();
       setShowAnswer(false);
+      setShowHint(false);
+      setShowExplanation(false);
+      setAiHint('');
+      setAiExplanation('');
+      setCardStartTime(new Date());
       
       // Move to next card
       if (currentCardIndex < flashcards.length - 1) {
@@ -225,6 +350,12 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const handleSkip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
+    // Record card time
+    if (cardStartTime) {
+      const cardTime = Math.floor((new Date().getTime() - cardStartTime.getTime()) / 1000);
+      setCardTimes([...cardTimes, cardTime]);
+    }
+    
     setReviewStats(prev => ({ ...prev, skipped: prev.skipped + 1 }));
     
     // Reset flip animation
@@ -234,6 +365,11 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
       useNativeDriver: true,
     }).start();
     setShowAnswer(false);
+    setShowHint(false);
+    setShowExplanation(false);
+    setAiHint('');
+    setAiExplanation('');
+    setCardStartTime(new Date());
     
     if (currentCardIndex < flashcards.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
@@ -248,6 +384,12 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSessionPaused(true);
     setShowPauseModal(true);
+    
+    // Pause timer
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
   };
 
   // Handle resuming the session
@@ -255,6 +397,12 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSessionPaused(false);
     setShowPauseModal(false);
+    
+    // Resume timer
+    const interval = setInterval(() => {
+      setSessionTime(prev => prev + 1);
+    }, 1000);
+    setTimerInterval(interval);
   };
 
   // Handle ending the session early
@@ -268,6 +416,12 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   const completeReview = async (earlyEnd: boolean = false) => {
     if (!user || !reviewStartTime) return;
     
+    // Stop timer
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
+    
     const endTime = new Date();
     const durationMinutes = Math.round((endTime.getTime() - reviewStartTime.getTime()) / 60000);
     
@@ -278,7 +432,7 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         subject: subject || 'Mixed',
         duration_minutes: durationMinutes,
         session_type: 'flashcards',
-        notes: `Reviewed ${reviewStats.total} flashcards: ${reviewStats.correct} correct, ${reviewStats.incorrect} incorrect, ${reviewStats.skipped} skipped`,
+        notes: `Reviewed ${reviewStats.total} flashcards: ${reviewStats.correct} correct, ${reviewStats.incorrect} incorrect, ${reviewStats.skipped} skipped. Hints used: ${reviewStats.hintsUsed}, Explanations used: ${reviewStats.explanationsUsed}`,
       });
       
       // Stop the session in the store
@@ -322,6 +476,13 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
     return Math.round(((currentCardIndex + 1) / flashcards.length) * 100);
   };
 
+  // Get average card time
+  const getAverageCardTime = () => {
+    if (cardTimes.length === 0) return 0;
+    const totalSeconds = cardTimes.reduce((sum, time) => sum + time, 0);
+    return Math.round(totalSeconds / cardTimes.length);
+  };
+
   // Interpolate flip animation
   const frontInterpolate = flipAnimation.interpolate({
     inputRange: [0, 1],
@@ -357,6 +518,8 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
   }
 
   const currentCard = flashcards[currentCardIndex];
+  const displayHint = currentCard.hint || aiHint;
+  const displayExplanation = currentCard.explanation || aiExplanation;
 
   return (
     <View style={styles.container}>
@@ -378,8 +541,8 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
             </Text>
           </View>
           
-          <TouchableOpacity onPress={() => setShowTipModal(true)} style={styles.tipButton}>
-            <Text style={styles.tipButtonText}>💡</Text>
+          <TouchableOpacity onPress={() => setShowStatsModal(true)} style={styles.statsButton}>
+            <Text style={styles.statsButtonText}>📊</Text>
           </TouchableOpacity>
         </View>
         
@@ -398,6 +561,59 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
             ]} 
           />
         </View>
+        
+        {/* Timer */}
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerText}>⏱️ {formatTime(sessionTime)}</Text>
+        </View>
+      </View>
+      
+      {/* Review Mode Selector */}
+      <View style={styles.modeSelectorContainer}>
+        <TouchableOpacity
+          style={[
+            styles.modeButton,
+            reviewMode === 'normal' && styles.selectedModeButton
+          ]}
+          onPress={() => setReviewMode('normal')}
+        >
+          <Text style={[
+            styles.modeButtonText,
+            reviewMode === 'normal' && styles.selectedModeButtonText
+          ]}>
+            Normal
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.modeButton,
+            reviewMode === 'difficult' && styles.selectedModeButton
+          ]}
+          onPress={() => setReviewMode('difficult')}
+        >
+          <Text style={[
+            styles.modeButtonText,
+            reviewMode === 'difficult' && styles.selectedModeButtonText
+          ]}>
+            Difficult
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.modeButton,
+            reviewMode === 'new' && styles.selectedModeButton
+          ]}
+          onPress={() => setReviewMode('new')}
+        >
+          <Text style={[
+            styles.modeButtonText,
+            reviewMode === 'new' && styles.selectedModeButtonText
+          ]}>
+            New
+          </Text>
+        </TouchableOpacity>
       </View>
       
       {/* Stats */}
@@ -436,9 +652,35 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
           <View style={styles.flashcardContent}>
             <Text style={styles.flashcardLabel}>Question</Text>
             <Text style={styles.flashcardText}>{currentCard.question}</Text>
-            <TouchableOpacity style={styles.flipButton} onPress={handleFlipCard}>
-              <Text style={styles.flipButtonText}>Show Answer</Text>
-            </TouchableOpacity>
+            
+            {currentCard.image_url && (
+              <Image source={{ uri: currentCard.image_url }} style={styles.flashcardImage} />
+            )}
+            
+            <View style={styles.flashcardActions}>
+              <TouchableOpacity style={styles.flipButton} onPress={handleFlipCard}>
+                <Text style={styles.flipButtonText}>Show Answer</Text>
+              </TouchableOpacity>
+              
+              {!showAnswer && (
+                <TouchableOpacity 
+                  style={styles.hintButton} 
+                  onPress={handleShowHint}
+                  disabled={generatingHint}
+                >
+                  <Text style={styles.hintButtonText}>
+                    {generatingHint ? 'Generating...' : '💡 Hint'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            {showHint && (
+              <View style={styles.hintContainer}>
+                <Text style={styles.hintTitle}>💡 Hint</Text>
+                <Text style={styles.hintText}>{displayHint}</Text>
+              </View>
+            )}
           </View>
         </Animated.View>
         
@@ -478,9 +720,28 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
               </TouchableOpacity>
             </View>
             
-            <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-              <Text style={styles.skipButtonText}>Skip</Text>
-            </TouchableOpacity>
+            <View style={styles.flashcardActions}>
+              <TouchableOpacity 
+                style={styles.explanationButton} 
+                onPress={handleShowExplanation}
+                disabled={generatingExplanation}
+              >
+                <Text style={styles.explanationButtonText}>
+                  {generatingExplanation ? 'Generating...' : '📝 Explanation'}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+                <Text style={styles.skipButtonText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {showExplanation && (
+              <View style={styles.explanationContainer}>
+                <Text style={styles.explanationTitle}>📝 Explanation</Text>
+                <Text style={styles.explanationText}>{displayExplanation}</Text>
+              </View>
+            )}
           </View>
         </Animated.View>
       </View>
@@ -538,6 +799,11 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
                 <Text style={styles.completeStatValue}>{getAccuracyPercentage()}%</Text>
                 <Text style={styles.completeStatLabel}>Accuracy</Text>
               </View>
+              
+              <View style={styles.completeStatItem}>
+                <Text style={styles.completeStatValue}>{formatTime(sessionTime)}</Text>
+                <Text style={styles.completeStatLabel}>Time Spent</Text>
+              </View>
             </View>
             
             <View style={styles.difficultyBreakdown}>
@@ -559,6 +825,20 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
               </View>
             </View>
             
+            <View style={styles.aiStatsBreakdown}>
+              <Text style={styles.aiStatsBreakdownTitle}>AI Assistance</Text>
+              
+              <View style={styles.aiStatsBreakdownItem}>
+                <Text style={styles.aiStatsBreakdownLabel}>Hints Used:</Text>
+                <Text style={styles.aiStatsBreakdownValue}>{reviewStats.hintsUsed}</Text>
+              </View>
+              
+              <View style={styles.aiStatsBreakdownItem}>
+                <Text style={styles.aiStatsBreakdownLabel}>Explanations Used:</Text>
+                <Text style={styles.aiStatsBreakdownValue}>{reviewStats.explanationsUsed}</Text>
+              </View>
+            </View>
+            
             <Button
               title="Continue"
               onPress={handleCloseCompleteModal}
@@ -568,26 +848,69 @@ export const FlashcardReviewScreen = ({ route, navigation }: any) => {
         </View>
       </Modal>
       
-      {/* Tip Modal */}
+      {/* Stats Modal */}
       <Modal
         animationType="fade"
         transparent={true}
-        visible={showTipModal}
-        onRequestClose={() => setShowTipModal(false)}
+        visible={showStatsModal}
+        onRequestClose={() => setShowStatsModal(false)}
       >
         <TouchableOpacity
-          style={styles.tipModalOverlay}
+          style={styles.statsModalOverlay}
           activeOpacity={1}
-          onPress={() => setShowTipModal(false)}
+          onPress={() => setShowStatsModal(false)}
         >
-          <View style={styles.tipModal}>
-            <Text style={styles.tipTitle}>💡 Review Tip</Text>
-            <Text style={styles.tipText}>{currentTip}</Text>
+          <View style={styles.statsModalContent}>
+            <Text style={styles.statsModalTitle}>Session Stats</Text>
+            
+            <View style={styles.statsModalSection}>
+              <Text style={styles.statsModalSectionTitle}>Performance</Text>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Cards Reviewed</Text>
+                <Text style={styles.statsModalValue}>{reviewStats.total}</Text>
+              </View>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Correct</Text>
+                <Text style={styles.statsModalValue}>{reviewStats.correct}</Text>
+              </View>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Incorrect</Text>
+                <Text style={styles.statsModalValue}>{reviewStats.incorrect}</Text>
+              </View>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Skipped</Text>
+                <Text style={styles.statsModalValue}>{reviewStats.skipped}</Text>
+              </View>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Accuracy</Text>
+                <Text style={styles.statsModalValue}>{getAccuracyPercentage()}%</Text>
+              </View>
+            </View>
+            
+            <View style={styles.statsModalSection}>
+              <Text style={styles.statsModalSectionTitle}>Time</Text>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Session Time</Text>
+                <Text style={styles.statsModalValue}>{formatTime(sessionTime)}</Text>
+              </View>
+              
+              <View style={styles.statsModalItem}>
+                <Text style={styles.statsModalLabel}>Avg. Card Time</Text>
+                <Text style={styles.statsModalValue}>{formatTime(getAverageCardTime())}</Text>
+              </View>
+            </View>
+            
             <TouchableOpacity 
-              onPress={() => setShowTipModal(false)}
-              style={styles.tipCloseButton}
+              onPress={() => setShowStatsModal(false)}
+              style={styles.statsModalCloseButton}
             >
-              <Text style={styles.tipCloseButtonText}>Got it!</Text>
+              <Text style={styles.statsModalCloseButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -637,7 +960,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
   },
-  tipButton: {
+  statsButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -645,18 +968,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  tipButtonText: {
+  statsButtonText: {
     fontSize: 18,
   },
   progressContainer: {
     height: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 2,
+    marginBottom: 8,
   },
   progressBar: {
     height: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 2,
+  },
+  timerContainer: {
+    alignItems: 'center',
+  },
+  timerText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  modeSelectorContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginHorizontal: 4,
+  },
+  selectedModeButton: {
+    backgroundColor: '#6366F1',
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  selectedModeButtonText: {
+    color: '#FFFFFF',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -690,7 +1046,7 @@ const styles = StyleSheet.create({
   },
   flashcard: {
     width: width * 0.9,
-    height: height * 0.5,
+    height: height * 0.6,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
@@ -722,19 +1078,62 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  flashcardImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 16,
+    resizeMode: 'cover',
+  },
+  flashcardActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   flipButton: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    alignSelf: 'center',
+    flex: 1,
+    marginRight: 8,
+    alignItems: 'center',
   },
   flipButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#6366F1',
+  },
+  hintButton: {
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+    alignItems: 'center',
+  },
+  hintButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0369A1',
+  },
+  hintContainer: {
+    backgroundColor: '#F0F9FF',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  hintTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0369A1',
+    marginBottom: 4,
+  },
+  hintText: {
+    fontSize: 14,
+    color: '#0C4A6E',
   },
   difficultyButtons: {
     flexDirection: 'row',
@@ -761,17 +1160,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  explanationButton: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  explanationButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+  },
   skipButton: {
     backgroundColor: '#F3F4F6',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    alignSelf: 'center',
+    flex: 1,
+    alignItems: 'center',
   },
   skipButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#6B7280',
+  },
+  explanationContainer: {
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: 8,
+  },
+  explanationTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+    marginBottom: 4,
+  },
+  explanationText: {
+    fontSize: 14,
+    color: '#14532D',
   },
   emptyContainer: {
     flex: 1,
@@ -886,7 +1315,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   difficultyBreakdownTitle: {
     fontSize: 16,
@@ -910,44 +1339,92 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
+  aiStatsBreakdown: {
+    width: '100%',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  aiStatsBreakdownTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  aiStatsBreakdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  aiStatsBreakdownLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  aiStatsBreakdownValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
   completeModalButton: {
     width: '100%',
   },
-  tipModalOverlay: {
+  statsModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
   },
-  tipModal: {
+  statsModalContent: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
-    alignItems: 'center',
-    maxWidth: 320,
+    width: '80%',
+    maxWidth: 300,
   },
-  tipTitle: {
+  statsModalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#111827',
-    marginBottom: 16,
-  },
-  tipText: {
-    fontSize: 16,
-    color: '#374151',
+    marginBottom: 20,
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
   },
-  tipCloseButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+  statsModalSection: {
+    marginBottom: 20,
   },
-  tipCloseButtonText: {
+  statsModalSectionTitle: {
     fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  statsModalItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statsModalLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  statsModalValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  statsModalCloseButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  statsModalCloseButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },

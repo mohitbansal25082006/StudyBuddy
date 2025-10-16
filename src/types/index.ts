@@ -97,6 +97,9 @@ export interface Flashcard {
   question: string;
   answer: string;
   difficulty: number;
+  hint: string | null;
+  explanation: string | null;
+  image_url: string | null;
   last_reviewed: string | null;
   next_review: string | null;
   review_count: number;

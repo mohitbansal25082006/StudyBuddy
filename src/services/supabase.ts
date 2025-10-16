@@ -270,6 +270,24 @@ export const getFlashcardsForReview = async (userId: string, subject?: string) =
   return data;
 };
 
+// Get all flashcards for a user (not just due ones)
+export const getAllFlashcards = async (userId: string, subject?: string) => {
+  let query = supabase
+    .from('flashcards')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (subject) {
+    query = query.eq('subject', subject);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return data;
+};
+
 // Create a new flashcard
 export const createFlashcard = async (flashcard: any) => {
   const { data, error } = await supabase
@@ -307,6 +325,140 @@ export const deleteFlashcard = async (cardId: string) => {
 
   if (error) throw error;
   return true;
+};
+
+// Get flashcard hint
+export const getFlashcardHint = async (cardId: string) => {
+  const { data, error } = await supabase
+    .from('flashcards')
+    .select('hint')
+    .eq('id', cardId)
+    .single();
+
+  if (error) throw error;
+  return data.hint || '';
+};
+
+// Get flashcard explanation
+export const getFlashcardExplanation = async (cardId: string) => {
+  const { data, error } = await supabase
+    .from('flashcards')
+    .select('explanation')
+    .eq('id', cardId)
+    .single();
+
+  if (error) throw error;
+  return data.explanation || '';
+};
+
+// Get flashcard statistics
+export const getFlashcardStats = async (userId: string) => {
+  // Get today's date at midnight
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayString = today.toISOString();
+  
+  // Get yesterday's date at midnight
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayString = yesterday.toISOString();
+  
+  try {
+    // Get total flashcards
+    const { data: totalCards, error: totalError } = await supabase
+      .from('flashcards')
+      .select('id')
+      .eq('user_id', userId);
+    
+    if (totalError) throw totalError;
+    
+    // Get flashcards due today
+    const { data: dueCards, error: dueError } = await supabase
+      .from('flashcards')
+      .select('id')
+      .eq('user_id', userId)
+      .lte('next_review', new Date().toISOString());
+    
+    if (dueError) throw dueError;
+    
+    // Get mastered flashcards
+    const { data: masteredCards, error: masteredError } = await supabase
+      .from('flashcards')
+      .select('id')
+      .eq('user_id', userId)
+      .gte('correct_count', 5)
+      .gte('review_count', 5);
+    
+    if (masteredError) throw masteredError;
+    
+    // Get today's study sessions
+    const { data: todaySessions, error: sessionsError } = await supabase
+      .from('study_sessions')
+      .select('completed_at')
+      .eq('user_id', userId)
+      .gte('completed_at', todayString)
+      .eq('session_type', 'flashcards');
+    
+    if (sessionsError) throw sessionsError;
+    
+    // Get yesterday's study sessions
+    const { data: yesterdaySessions, error: yesterdaySessionsError } = await supabase
+      .from('study_sessions')
+      .select('completed_at')
+      .eq('user_id', userId)
+      .gte('completed_at', yesterdayString)
+      .lt('completed_at', todayString)
+      .eq('session_type', 'flashcards');
+    
+    if (yesterdaySessionsError) throw yesterdaySessionsError;
+    
+    // Calculate current streak
+    let currentStreak = 0;
+    if (todaySessions.length > 0) {
+      currentStreak = 1;
+      
+      // Check previous days to extend streak
+      let checkDate = new Date(yesterday);
+      let streakContinues = true;
+      
+      while (streakContinues) {
+        const startDate = new Date(checkDate);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(checkDate);
+        endDate.setHours(23, 59, 59, 999);
+        
+        const { data: daySessions, error: dayError } = await supabase
+          .from('study_sessions')
+          .select('completed_at')
+          .eq('user_id', userId)
+          .gte('completed_at', startDate.toISOString())
+          .lte('completed_at', endDate.toISOString())
+          .eq('session_type', 'flashcards');
+        
+        if (dayError) throw dayError;
+        
+        if (daySessions.length > 0) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          streakContinues = false;
+        }
+      }
+    }
+    
+    return {
+      totalCards: totalCards.length,
+      dueCards: dueCards.length,
+      masteredCards: masteredCards.length,
+      todaySessions: todaySessions.length,
+      lastStudyDate: todaySessions.length > 0 ? todayString : 
+                   yesterdaySessions.length > 0 ? yesterdayString : null,
+      currentStreak,
+    };
+  } catch (error) {
+    console.error('Error getting flashcard stats:', error);
+    throw error;
+  }
 };
 
 // ============================================

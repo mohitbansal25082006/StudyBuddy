@@ -18,7 +18,9 @@ import {
   getFlashcards, 
   getStudySessions, 
   getCalendarEvents,
-  getSubjectProgress 
+  getSubjectProgress,
+  getFlashcardsForReview,
+  getFlashcardStats
 } from '../services/supabase';
 
 interface StudyState {
@@ -29,7 +31,9 @@ interface StudyState {
   
   // Flashcards
   flashcards: Flashcard[];
+  dueFlashcards: Flashcard[];
   flashcardsLoading: boolean;
+  flashcardStats: any;
   
   // Study Sessions
   studySessions: StudySession[];
@@ -47,11 +51,14 @@ interface StudyState {
   fetchStudyPlans: (userId: string) => Promise<void>;
   setCurrentStudyPlan: (plan: StudyPlan | null) => void;
   fetchFlashcards: (userId: string, subject?: string) => Promise<void>;
+  fetchDueFlashcards: (userId: string, subject?: string) => Promise<void>;
+  fetchFlashcardStats: (userId: string) => Promise<void>;
   fetchStudySessions: (userId: string, limit?: number) => Promise<void>;
   fetchCalendarEvents: (userId: string, startDate?: string, endDate?: string) => Promise<void>;
   fetchSubjectProgress: (userId: string) => Promise<void>;
   addStudySession: (session: StudySession) => void;
   updateFlashcard: (cardId: string, updates: Partial<Flashcard>) => void;
+  clearStudyData: () => void;
 }
 
 export const useStudyStore = create<StudyState>((set, get) => ({
@@ -61,7 +68,9 @@ export const useStudyStore = create<StudyState>((set, get) => ({
   studyPlansLoading: false,
   
   flashcards: [],
+  dueFlashcards: [],
   flashcardsLoading: false,
+  flashcardStats: null,
   
   studySessions: [],
   studySessionsLoading: false,
@@ -96,6 +105,24 @@ export const useStudyStore = create<StudyState>((set, get) => ({
     } catch (error) {
       console.error('Error fetching flashcards:', error);
       set({ flashcardsLoading: false });
+    }
+  },
+  
+  fetchDueFlashcards: async (userId: string, subject?: string) => {
+    try {
+      const cards = await getFlashcardsForReview(userId, subject);
+      set({ dueFlashcards: cards });
+    } catch (error) {
+      console.error('Error fetching due flashcards:', error);
+    }
+  },
+  
+  fetchFlashcardStats: async (userId: string) => {
+    try {
+      const stats = await getFlashcardStats(userId);
+      set({ flashcardStats: stats });
+    } catch (error) {
+      console.error('Error fetching flashcard stats:', error);
     }
   },
   
@@ -138,10 +165,26 @@ export const useStudyStore = create<StudyState>((set, get) => ({
   },
   
   updateFlashcard: (cardId: string, updates: Partial<Flashcard>) => {
-    const { flashcards } = get();
+    const { flashcards, dueFlashcards } = get();
     const updatedCards = flashcards.map(card => 
       card.id === cardId ? { ...card, ...updates } : card
     );
-    set({ flashcards: updatedCards });
+    const updatedDueCards = dueFlashcards.map(card => 
+      card.id === cardId ? { ...card, ...updates } : card
+    );
+    set({ flashcards: updatedCards, dueFlashcards: updatedDueCards });
+  },
+  
+  clearStudyData: () => {
+    set({
+      studyPlans: [],
+      currentStudyPlan: null,
+      flashcards: [],
+      dueFlashcards: [],
+      flashcardStats: null,
+      studySessions: [],
+      calendarEvents: [],
+      subjectProgress: [],
+    });
   },
 }));
