@@ -3,15 +3,14 @@
 // STUDY PLAN DETAIL SCREEN - ENHANCED & RESPONSIVE
 // Fully compatible with Android & iOS with polished UI
 // ============================================
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
-  Alert, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
   Modal,
   TextInput,
   FlatList,
@@ -27,20 +26,19 @@ import {
 } from 'react-native';
 import { useStudyStore } from '../../store/studyStore';
 import { useAuthStore } from '../../store/authStore';
-import { 
-  getStudyPlan, 
-  updateStudyPlan, 
-  deleteStudyPlan, 
+import {
+  getStudyPlan,
+  updateStudyPlan,
+  deleteStudyPlan,
   createStudySession,
   addCustomResources,
   addCustomTasks,
-  rateResource,
   addTaskNotes
 } from '../../services/supabase';
-import { 
-  generateAdditionalResources, 
+import {
+  generateAdditionalResources,
   generateAdditionalTasks,
-  verifyAndRateResources 
+  verifyAndRateResources
 } from '../../services/openai';
 import { StudyPlan, StudyWeek, StudyTask, StudyResource } from '../../types';
 import { Button } from '../../components/Button';
@@ -59,7 +57,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
   const { planId, startSession = false } = route.params;
   const { user } = useAuthStore();
   const { currentStudyPlan, setCurrentStudyPlan } = useStudyStore();
-  
+ 
   const [loading, setLoading] = useState(true);
   const [sessionModalVisible, setSessionModalVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<StudyTask | null>(null);
@@ -67,7 +65,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
   const [sessionNotes, setSessionNotes] = useState('');
   const [sessionTimer, setSessionTimer] = useState(0);
   const [sessionTimerInterval, setSessionTimerInterval] = useState<NodeJS.Timeout | null>(null);
-  
+ 
   // Resource and task modals
   const [resourceModalVisible, setResourceModalVisible] = useState(false);
   const [taskModalVisible, setTaskModalVisible] = useState(false);
@@ -78,23 +76,18 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
   const [customTaskTitle, setCustomTaskTitle] = useState('');
   const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTaskDuration, setCustomTaskDuration] = useState(60);
-  
+ 
   // Notes modal
   const [notesModalVisible, setNotesModalVisible] = useState(false);
   const [taskNotes, setTaskNotes] = useState('');
   const [selectedWeekIndexForNotes, setSelectedWeekIndexForNotes] = useState(0);
   const [selectedTaskIndexForNotes, setSelectedTaskIndexForNotes] = useState(0);
-  
-  // Rating modal
-  const [ratingModalVisible, setRatingModalVisible] = useState(false);
-  const [resourceRating, setResourceRating] = useState(3);
-  const [selectedResourceId, setSelectedResourceId] = useState('');
-  
+ 
   // AI features
   const [generatingResources, setGeneratingResources] = useState(false);
   const [generatingTasks, setGeneratingTasks] = useState(false);
   const [verifyingResources, setVerifyingResources] = useState(false);
-  
+ 
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -106,7 +99,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
       try {
         const plan = await getStudyPlan(planId);
         setCurrentStudyPlan(plan);
-        
+       
         // Animate in the screen
         Animated.parallel([
           Animated.timing(fadeAnim, {
@@ -120,7 +113,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             useNativeDriver: true,
           })
         ]).start();
-        
+       
         // Auto-start session if requested
         if (startSession && plan.plan_data.weeks.length > 0 && plan.plan_data.weeks[0].tasks.length > 0) {
           const firstTask = plan.plan_data.weeks[0].tasks[0];
@@ -134,7 +127,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         setLoading(false);
       }
     };
-
     loadPlan();
   }, [planId]);
 
@@ -154,11 +146,9 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleToggleTask = useCallback(async (weekIndex: number, taskIndex: number) => {
     if (!currentStudyPlan || !user) return;
-
     const updatedPlanData = { ...currentStudyPlan.plan_data };
     const task = updatedPlanData.weeks[weekIndex].tasks[taskIndex];
     task.completed = !task.completed;
-
     try {
       await updateStudyPlan(planId, { plan_data: updatedPlanData });
       setCurrentStudyPlan({ ...currentStudyPlan, plan_data: updatedPlanData });
@@ -178,10 +168,8 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleCompleteSession = useCallback(async () => {
     if (!selectedTask || !sessionStartTime || !currentStudyPlan || !user) return;
-
     const endTime = new Date();
     const durationMinutes = Math.round((endTime.getTime() - sessionStartTime.getTime()) / 60000);
-
     try {
       // Create session data with proper typing - include all fields upfront
       const sessionData: {
@@ -201,20 +189,18 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         notes: sessionNotes,
         completed_at: new Date().toISOString(),
       };
-      
+     
       // Add optional fields if they exist
       if (selectedTask.id) {
         sessionData.tasks_completed = [selectedTask.id];
       }
-      
+     
       if (planId) {
         sessionData.study_plan_id = planId;
       }
-
       await createStudySession(sessionData);
-
       const updatedPlanData = { ...currentStudyPlan.plan_data };
-      
+     
       for (let i = 0; i < updatedPlanData.weeks.length; i++) {
         const taskIndex = updatedPlanData.weeks[i].tasks.findIndex(t => t.id === selectedTask.id);
         if (taskIndex !== -1) {
@@ -222,15 +208,12 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
           break;
         }
       }
-
       await updateStudyPlan(planId, { plan_data: updatedPlanData });
       setCurrentStudyPlan({ ...currentStudyPlan, plan_data: updatedPlanData });
-
       setSessionModalVisible(false);
       setSelectedTask(null);
       setSessionStartTime(null);
       setSessionNotes('');
-
       Alert.alert('Success', 'Study session completed!');
     } catch (error) {
       console.error('Error completing session:', error);
@@ -263,7 +246,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleSharePlan = useCallback(async () => {
     if (!currentStudyPlan) return;
-    
+   
     try {
       await Share.share({
         message: `Check out my study plan for ${currentStudyPlan.subject}: ${currentStudyPlan.title}`,
@@ -279,9 +262,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
       Alert.alert('Error', 'Please enter a title and URL for the resource');
       return;
     }
-
     if (!currentStudyPlan) return;
-
     try {
       const newResource: StudyResource = {
         id: `custom_${Date.now()}`,
@@ -294,16 +275,15 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         tags: [],
         difficulty: currentStudyPlan.difficulty_level,
       };
-
       await addCustomResources(planId, [newResource]);
       const updatedPlan = await getStudyPlan(planId);
       setCurrentStudyPlan(updatedPlan);
-      
+     
       setCustomResourceTitle('');
       setCustomResourceUrl('');
       setCustomResourceDescription('');
       setResourceModalVisible(false);
-      
+     
       Alert.alert('Success', 'Resource added successfully!');
     } catch (error) {
       console.error('Error adding resource:', error);
@@ -316,9 +296,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
       Alert.alert('Error', 'Please enter a title for the task');
       return;
     }
-
     if (!currentStudyPlan) return;
-
     try {
       const newTask: StudyTask = {
         id: `custom_${Date.now()}`,
@@ -331,16 +309,15 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         difficulty: currentStudyPlan.difficulty_level,
         priority: 'medium',
       };
-
       await addCustomTasks(planId, selectedWeekIndex, [newTask]);
       const updatedPlan = await getStudyPlan(planId);
       setCurrentStudyPlan(updatedPlan);
-      
+     
       setCustomTaskTitle('');
       setCustomTaskDescription('');
       setCustomTaskDuration(60);
       setTaskModalVisible(false);
-      
+     
       Alert.alert('Success', 'Task added successfully!');
     } catch (error) {
       console.error('Error adding task:', error);
@@ -350,7 +327,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleGenerateAdditionalResources = useCallback(async () => {
     if (!currentStudyPlan) return;
-    
+   
     setGeneratingResources(true);
     try {
       const topics = currentStudyPlan.plan_data.weeks.flatMap(week => week.topics);
@@ -361,11 +338,11 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         'visual',
         currentStudyPlan.plan_data.resources
       );
-      
+     
       await addCustomResources(planId, additionalResources);
       const updatedPlan = await getStudyPlan(planId);
       setCurrentStudyPlan(updatedPlan);
-      
+     
       Alert.alert('Success', `Generated ${additionalResources.length} additional resources!`);
     } catch (error) {
       console.error('Error generating resources:', error);
@@ -377,7 +354,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleGenerateAdditionalTasks = useCallback(async (weekIndex: number) => {
     if (!currentStudyPlan) return;
-    
+   
     setGeneratingTasks(true);
     try {
       const week = currentStudyPlan.plan_data.weeks[weekIndex];
@@ -389,11 +366,11 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         'visual',
         week.tasks
       );
-      
+     
       await addCustomTasks(planId, weekIndex, additionalTasks);
       const updatedPlan = await getStudyPlan(planId);
       setCurrentStudyPlan(updatedPlan);
-      
+     
       Alert.alert('Success', `Generated ${additionalTasks.length} additional tasks!`);
     } catch (error) {
       console.error('Error generating tasks:', error);
@@ -405,17 +382,17 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const handleVerifyResources = useCallback(async () => {
     if (!currentStudyPlan) return;
-    
+   
     setVerifyingResources(true);
     try {
       const verifiedResources = await verifyAndRateResources(currentStudyPlan.plan_data.resources);
-      
+     
       const updatedPlanData = { ...currentStudyPlan.plan_data };
       updatedPlanData.resources = verifiedResources;
-      
+     
       await updateStudyPlan(planId, { plan_data: updatedPlanData });
       setCurrentStudyPlan({ ...currentStudyPlan, plan_data: updatedPlanData });
-      
+     
       Alert.alert('Success', 'Resources verified and rated!');
     } catch (error) {
       console.error('Error verifying resources:', error);
@@ -434,36 +411,17 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     }
   }, []);
 
-  const handleRateResource = useCallback(async () => {
-    if (!currentStudyPlan) return;
-    
-    try {
-      await rateResource(planId, selectedResourceId, resourceRating);
-      const updatedPlan = await getStudyPlan(planId);
-      setCurrentStudyPlan(updatedPlan);
-      
-      setResourceRating(3);
-      setSelectedResourceId('');
-      setRatingModalVisible(false);
-      
-      Alert.alert('Success', 'Resource rated successfully!');
-    } catch (error) {
-      console.error('Error rating resource:', error);
-      Alert.alert('Error', 'Failed to rate resource');
-    }
-  }, [currentStudyPlan, planId, selectedResourceId, resourceRating]);
-
   const handleAddTaskNotes = useCallback(async () => {
     if (!currentStudyPlan) return;
-    
+   
     try {
       await addTaskNotes(planId, selectedWeekIndexForNotes, selectedTaskIndexForNotes, taskNotes);
       const updatedPlan = await getStudyPlan(planId);
       setCurrentStudyPlan(updatedPlan);
-      
+     
       setTaskNotes('');
       setNotesModalVisible(false);
-      
+     
       Alert.alert('Success', 'Notes added successfully!');
     } catch (error) {
       console.error('Error adding notes:', error);
@@ -473,17 +431,14 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const getProgressPercentage = useCallback(() => {
     if (!currentStudyPlan) return 0;
-
     let totalTasks = 0;
     let completedTasks = 0;
-
     currentStudyPlan.plan_data.weeks.forEach(week => {
       week.tasks.forEach(task => {
         totalTasks++;
         if (task.completed) completedTasks++;
       });
     });
-
     return totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   }, [currentStudyPlan]);
 
@@ -518,7 +473,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+   
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
@@ -539,10 +494,10 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
           {getResourceTypeIcon(item.type)}
         </Text>
       </View>
-      
+     
       <View style={styles.resourceContent}>
         <View style={styles.resourceHeader}>
-          <Text style={styles.resourceTitle} numberOfLines={2}>
+          <Text style={styles.resourceTitle}>
             {item.title}
           </Text>
           <View style={styles.resourceRating}>
@@ -554,22 +509,12 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             )}
           </View>
         </View>
-        
-        <Text style={styles.resourceDescription} numberOfLines={2}>
+       
+        <Text style={styles.resourceDescription}>
           {item.description}
         </Text>
-        
+       
         <View style={styles.resourceFooter}>
-          <TouchableOpacity
-            style={styles.resourceActionButton}
-            onPress={() => {
-              setSelectedResourceId(item.id);
-              setRatingModalVisible(true);
-            }}
-          >
-            <Text style={styles.resourceActionText}>Rate</Text>
-          </TouchableOpacity>
-          
           <TouchableOpacity
             style={[styles.resourceActionButton, styles.openButton]}
             onPress={() => handleOpenResource(item)}
@@ -581,10 +526,10 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     </Pressable>
   ), [handleOpenResource]);
 
-  const renderTaskItem = useCallback(({ item, weekIndex, taskIndex }: { 
-    item: StudyTask, 
-    weekIndex: number, 
-    taskIndex: number 
+  const renderTaskItem = useCallback(({ item, weekIndex, taskIndex }: {
+    item: StudyTask,
+    weekIndex: number,
+    taskIndex: number
   }) => (
     <Pressable
       key={`task-week${weekIndex}-task${taskIndex}-${item.id}`}
@@ -605,7 +550,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
           {item.completed && <Text style={styles.checkmark}>✓</Text>}
         </View>
       </TouchableOpacity>
-      
+     
       <View style={styles.taskContent}>
         <View style={styles.taskHeader}>
           <Text style={styles.taskTypeIcon}>
@@ -614,7 +559,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
           <Text style={[
             styles.taskTitle,
             item.completed && styles.taskTitleCompleted
-          ]} numberOfLines={2}>
+          ]}>
             {item.title}
           </Text>
           <View style={[
@@ -628,25 +573,25 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             </Text>
           </View>
         </View>
-        
-        <Text style={styles.taskDescription} numberOfLines={3}>
+       
+        <Text style={styles.taskDescription}>
           {item.description}
         </Text>
-        
+       
         {item.notes && (
           <View style={styles.taskNotesContainer}>
             <Text style={styles.taskNotesLabel}>Notes:</Text>
-            <Text style={styles.taskNotesText} numberOfLines={2}>
+            <Text style={styles.taskNotesText}>
               {item.notes}
             </Text>
           </View>
         )}
-        
+       
         <View style={styles.taskFooter}>
           <Text style={styles.taskDuration}>
             ⏱️ {item.duration_minutes} min
           </Text>
-          
+         
           <View style={styles.taskActions}>
             <TouchableOpacity
               style={styles.taskActionButton}
@@ -659,7 +604,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             >
               <Text style={styles.taskActionText}>📝 Notes</Text>
             </TouchableOpacity>
-            
+           
             {!item.completed && (
               <TouchableOpacity
                 style={[styles.taskActionButton, styles.startButton]}
@@ -697,7 +642,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
           transform: [{ translateY: slideAnim }]
         }
       ]}>
-        <ScrollView 
+        <ScrollView
           ref={scrollRef}
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
@@ -706,34 +651,34 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         >
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title} numberOfLines={2}>
+            <Text style={styles.title}>
               {currentStudyPlan.title}
             </Text>
             <View style={styles.subjectBadge}>
               <Text style={styles.subject}>{currentStudyPlan.subject}</Text>
             </View>
-            
+           
             {currentStudyPlan.description && (
-              <Text style={styles.description} numberOfLines={3}>
+              <Text style={styles.description}>
                 {currentStudyPlan.description}
               </Text>
             )}
-            
+           
             <View style={styles.progressContainer}>
               <View style={styles.progressLabelRow}>
                 <Text style={styles.progressLabel}>Progress</Text>
                 <Text style={styles.progressPercentage}>{getProgressPercentage()}%</Text>
               </View>
               <View style={styles.progressBar}>
-                <Animated.View 
+                <Animated.View
                   style={[
                     styles.progressFill,
                     { width: `${getProgressPercentage()}%` }
-                  ]} 
+                  ]}
                 />
               </View>
             </View>
-            
+           
             <View style={styles.headerActions}>
               <TouchableOpacity
                 style={styles.headerActionButton}
@@ -743,7 +688,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 <Text style={styles.headerActionIcon}>📤</Text>
                 <Text style={styles.headerActionText}>Share</Text>
               </TouchableOpacity>
-              
+             
               <TouchableOpacity
                 style={[styles.headerActionButton, styles.deleteButton]}
                 onPress={handleDeletePlan}
@@ -816,13 +761,13 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 </Text>
               </TouchableOpacity>
             </View>
-            
+           
             {currentStudyPlan.plan_data.weeks.map((week, weekIndex) => (
               <View key={`week-${weekIndex}`} style={styles.weekContainer}>
                 <View style={styles.weekHeader}>
                   <View style={styles.weekTitleContainer}>
                     <Text style={styles.weekNumber}>Week {weekIndex + 1}</Text>
-                    <Text style={styles.weekTitle} numberOfLines={2}>
+                    <Text style={styles.weekTitle}>
                       {week.title}
                     </Text>
                   </View>
@@ -837,7 +782,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     <Text style={styles.addTaskButtonText}>+ Task</Text>
                   </TouchableOpacity>
                 </View>
-                
+               
                 {week.objectives?.length > 0 && (
                   <View style={styles.objectivesContainer}>
                     <Text style={styles.objectivesLabel}>Objectives:</Text>
@@ -848,20 +793,20 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     ))}
                   </View>
                 )}
-                
+               
                 {week.topics?.length > 0 && (
                   <View style={styles.topicsContainer}>
                     <Text style={styles.topicsLabel}>Topics:</Text>
                     <Text style={styles.topicsText}>{week.topics.join(', ')}</Text>
                   </View>
                 )}
-                
+               
                 <View style={styles.tasksContainer}>
-                  {week.tasks.map((task, taskIndex) => 
+                  {week.tasks.map((task, taskIndex) =>
                     renderTaskItem({ item: task, weekIndex, taskIndex })
                   )}
                 </View>
-                
+               
                 {week.summary && (
                   <View style={styles.weekSummaryContainer}>
                     <Text style={styles.weekSummaryLabel}>Summary:</Text>
@@ -877,7 +822,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>📚 Resources</Text>
             </View>
-            
+           
             <View style={styles.resourceButtonsRow}>
               <TouchableOpacity
                 style={styles.aiButton}
@@ -889,7 +834,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   {generatingResources ? '⏳' : '🤖'} AI
                 </Text>
               </TouchableOpacity>
-              
+             
               <TouchableOpacity
                 style={styles.verifyButton}
                 onPress={handleVerifyResources}
@@ -900,7 +845,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   {verifyingResources ? '⏳' : '✓'} Verify
                 </Text>
               </TouchableOpacity>
-              
+             
               <TouchableOpacity
                 style={styles.addResourceButton}
                 onPress={() => setResourceModalVisible(true)}
@@ -909,9 +854,9 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 <Text style={styles.addResourceButtonText}>+ Add</Text>
               </TouchableOpacity>
             </View>
-            
+           
             <View style={styles.resourcesList}>
-              {currentStudyPlan.plan_data.resources.map((item, index) => 
+              {currentStudyPlan.plan_data.resources.map((item, index) =>
                 renderResourceItem({ item, index })
               )}
             </View>
@@ -929,7 +874,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             behavior={isIOS ? "padding" : "height"}
             style={styles.modalOverlay}
           >
-            <Pressable 
+            <Pressable
               style={styles.modalBackdrop}
               onPress={() => setSessionModalVisible(false)}
             />
@@ -943,23 +888,23 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   <Text style={styles.closeButtonText}>✕</Text>
                 </TouchableOpacity>
               </View>
-              
+             
               {selectedTask && (
                 <View style={styles.modalTask}>
-                  <Text style={styles.modalTaskTitle} numberOfLines={2}>
+                  <Text style={styles.modalTaskTitle}>
                     {selectedTask.title}
                   </Text>
-                  <Text style={styles.modalTaskDescription} numberOfLines={3}>
+                  <Text style={styles.modalTaskDescription}>
                     {selectedTask.description}
                   </Text>
                 </View>
               )}
-              
+             
               <View style={styles.timerContainer}>
                 <Text style={styles.timerLabel}>Time Elapsed</Text>
                 <Text style={styles.timerText}>{formatTime(sessionTimer)}</Text>
               </View>
-              
+             
               <View style={styles.notesContainer}>
                 <Text style={styles.notesLabel}>Session Notes</Text>
                 <TextInput
@@ -973,7 +918,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   textAlignVertical="top"
                 />
               </View>
-              
+             
               <View style={styles.sessionActions}>
                 <TouchableOpacity
                   style={styles.completeButton}
@@ -982,7 +927,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 >
                   <Text style={styles.completeButtonText}>✓ Complete Session</Text>
                 </TouchableOpacity>
-                
+               
                 <TouchableOpacity
                   style={styles.cancelModalButton}
                   onPress={() => setSessionModalVisible(false)}
@@ -1006,7 +951,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             behavior={isIOS ? "padding" : "height"}
             style={styles.modalOverlay}
           >
-            <Pressable 
+            <Pressable
               style={styles.modalBackdrop}
               onPress={() => setResourceModalVisible(false)}
             />
@@ -1024,7 +969,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     <Text style={styles.closeButtonText}>✕</Text>
                   </TouchableOpacity>
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Title *</Text>
                   <TextInput
@@ -1035,7 +980,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>URL *</Text>
                   <TextInput
@@ -1048,7 +993,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     autoCapitalize="none"
                   />
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Description</Text>
                   <TextInput
@@ -1062,7 +1007,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     textAlignVertical="top"
                   />
                 </View>
-                
+               
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={styles.addButton}
@@ -1071,7 +1016,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   >
                     <Text style={styles.addButtonText}>Add Resource</Text>
                   </TouchableOpacity>
-                  
+                 
                   <TouchableOpacity
                     style={styles.cancelModalButton}
                     onPress={() => setResourceModalVisible(false)}
@@ -1096,7 +1041,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             behavior={isIOS ? "padding" : "height"}
             style={styles.modalOverlay}
           >
-            <Pressable 
+            <Pressable
               style={styles.modalBackdrop}
               onPress={() => setTaskModalVisible(false)}
             />
@@ -1114,7 +1059,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     <Text style={styles.closeButtonText}>✕</Text>
                   </TouchableOpacity>
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Title *</Text>
                   <TextInput
@@ -1125,7 +1070,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Description</Text>
                   <TextInput
@@ -1139,7 +1084,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     textAlignVertical="top"
                   />
                 </View>
-                
+               
                 <View style={styles.inputContainer}>
                   <Text style={styles.inputLabel}>Duration (minutes)</Text>
                   <TextInput
@@ -1151,7 +1096,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                     keyboardType="numeric"
                   />
                 </View>
-                
+               
                 <View style={styles.modalActions}>
                   <TouchableOpacity
                     style={styles.addButton}
@@ -1160,7 +1105,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   >
                     <Text style={styles.addButtonText}>Add Task</Text>
                   </TouchableOpacity>
-                  
+                 
                   <TouchableOpacity
                     style={styles.cancelModalButton}
                     onPress={() => setTaskModalVisible(false)}
@@ -1185,7 +1130,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             behavior={isIOS ? "padding" : "height"}
             style={styles.modalOverlay}
           >
-            <Pressable 
+            <Pressable
               style={styles.modalBackdrop}
               onPress={() => setNotesModalVisible(false)}
             />
@@ -1199,7 +1144,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   <Text style={styles.closeButtonText}>✕</Text>
                 </TouchableOpacity>
               </View>
-              
+             
               <TextInput
                 style={[styles.textInput, styles.notesTextArea]}
                 value={taskNotes}
@@ -1210,7 +1155,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 numberOfLines={6}
                 textAlignVertical="top"
               />
-              
+             
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={styles.addButton}
@@ -1219,7 +1164,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 >
                   <Text style={styles.addButtonText}>Save Notes</Text>
                 </TouchableOpacity>
-                
+               
                 <TouchableOpacity
                   style={styles.cancelModalButton}
                   onPress={() => setNotesModalVisible(false)}
@@ -1230,70 +1175,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
               </View>
             </View>
           </KeyboardAvoidingView>
-        </Modal>
-
-        {/* Rating Modal */}
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={ratingModalVisible}
-          onRequestClose={() => setRatingModalVisible(false)}
-        >
-          <Pressable 
-            style={styles.modalOverlay}
-            onPress={() => setRatingModalVisible(false)}
-          >
-            <Pressable style={styles.ratingModalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Rate Resource</Text>
-                <TouchableOpacity
-                  onPress={() => setRatingModalVisible(false)}
-                  style={styles.closeButton}
-                >
-                  <Text style={styles.closeButtonText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.ratingContainer}>
-                <Text style={styles.ratingLabel}>Your Rating</Text>
-                <View style={styles.starsContainer}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <TouchableOpacity
-                      key={`star-${star}`}
-                      onPress={() => setResourceRating(star)}
-                      style={styles.starButton}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[
-                        styles.star,
-                        star <= resourceRating && styles.starSelected
-                      ]}>
-                        {star <= resourceRating ? '⭐' : '☆'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={handleRateResource}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.addButtonText}>Submit Rating</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.cancelModalButton}
-                  onPress={() => setRatingModalVisible(false)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.cancelModalButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </Pressable>
-          </Pressable>
         </Modal>
       </Animated.View>
     </SafeAreaView>
@@ -2101,49 +1982,6 @@ const styles = StyleSheet.create({
   notesTextArea: {
     minHeight: moderateScale(180),
     marginBottom: moderateScale(20),
-  },
-  ratingModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: moderateScale(20),
-    padding: moderateScale(24),
-    marginHorizontal: moderateScale(20),
-    marginVertical: 'auto',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  ratingContainer: {
-    alignItems: 'center',
-    marginBottom: moderateScale(24),
-    paddingVertical: moderateScale(20),
-  },
-  ratingLabel: {
-    fontSize: moderateScale(16),
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: moderateScale(16),
-  },
-  starsContainer: {
-    flexDirection: 'row',
-    gap: moderateScale(8),
-  },
-  starButton: {
-    padding: moderateScale(4),
-  },
-  star: {
-    fontSize: moderateScale(40),
-    color: '#D1D5DB',
-  },
-  starSelected: {
-    color: '#F59E0B',
   },
   errorContainer: {
     flex: 1,

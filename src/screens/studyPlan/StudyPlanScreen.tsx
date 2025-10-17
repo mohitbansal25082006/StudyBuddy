@@ -66,6 +66,30 @@ const FILTER_OPTIONS = [
   { value: 'not_started', label: 'Not Started', icon: '🆕' },
 ];
 
+// Fallback study tips that will be used if API fails
+const FALLBACK_STUDY_TIPS = [
+  "Take regular breaks every 25-30 minutes to maintain focus and prevent burnout.",
+  "Use the Pomodoro Technique: 25 minutes of focused study followed by a 5-minute break.",
+  "Create a dedicated study space free from distractions to improve concentration.",
+  "Teach what you've learned to someone else to reinforce your understanding.",
+  "Use active recall instead of passive reading to improve retention.",
+  "Connect new information to what you already know to build stronger memory pathways.",
+  "Use visual aids like diagrams, charts, and mind maps to organize information.",
+  "Review material before sleep to help consolidate memories during the night.",
+  "Stay hydrated and maintain a balanced diet to support optimal brain function.",
+  "Set specific, achievable goals for each study session to stay motivated.",
+  "Use mnemonic devices to remember complex information more easily.",
+  "Practice spaced repetition by reviewing material at increasing intervals.",
+  "Create summary notes in your own words to improve comprehension.",
+  "Use background music without lyrics if it helps you focus.",
+  "Practice explaining concepts out loud to identify gaps in your understanding.",
+  "Use flashcards for quick, effective review of key concepts.",
+  "Study during your peak energy hours when you're most alert.",
+  "Break large tasks into smaller, manageable chunks to avoid feeling overwhelmed.",
+  "Use different colors to highlight and categorize important information.",
+  "Get adequate sleep before exams to ensure optimal cognitive performance."
+];
+
 export const StudyPlanScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
   const { studyPlans, fetchStudyPlans } = useStudyStore();
@@ -84,6 +108,7 @@ export const StudyPlanScreen = ({ navigation }: any) => {
   const [showRecommended, setShowRecommended] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [studyTips, setStudyTips] = useState<string[]>([]);
+  const [loadingTips, setLoadingTips] = useState(false);
   const [preferences, setPreferences] = useState<any>(null);
   const [animatedValue] = useState(new Animated.Value(0));
   const [formHeight] = useState(new Animated.Value(0));
@@ -328,6 +353,32 @@ export const StudyPlanScreen = ({ navigation }: any) => {
     setShowFilterModal(false);
   };
 
+  const handleShowTips = async () => {
+    setShowTips(true);
+    setLoadingTips(true);
+    
+    try {
+      // Generate new tips each time the modal is opened
+      const tips = await generateStudyTips(
+        'General Study', // Use a general subject for tips
+        'beginner', // Use beginner difficulty for broader appeal
+        profile?.learning_style || 'visual'
+      );
+      
+      // If API succeeds, use the generated tips
+      setStudyTips(tips);
+    } catch (error) {
+      console.error('Error generating study tips:', error);
+      
+      // If API fails, use random fallback tips
+      const shuffledTips = [...FALLBACK_STUDY_TIPS].sort(() => 0.5 - Math.random());
+      const selectedTips = shuffledTips.slice(0, 5);
+      setStudyTips(selectedTips);
+    } finally {
+      setLoadingTips(false);
+    }
+  };
+
   const getFilteredAndSortedPlans = () => {
     let filteredPlans = [...studyPlans];
     
@@ -482,7 +533,7 @@ export const StudyPlanScreen = ({ navigation }: any) => {
               <View style={styles.headerButtons}>
                 <TouchableOpacity
                   style={styles.iconButton}
-                  onPress={() => setShowTips(true)}
+                  onPress={handleShowTips}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.iconButtonText}>💡</Text>
@@ -890,7 +941,11 @@ export const StudyPlanScreen = ({ navigation }: any) => {
                     </TouchableOpacity>
                   </View>
                   
-                  {studyTips.length > 0 ? (
+                  {loadingTips ? (
+                    <View style={styles.tipsLoadingContainer}>
+                      <LoadingSpinner message="Generating study tips..." />
+                    </View>
+                  ) : studyTips.length > 0 ? (
                     <FlatList
                       data={studyTips}
                       renderItem={renderStudyTip}
@@ -901,9 +956,9 @@ export const StudyPlanScreen = ({ navigation }: any) => {
                   ) : (
                     <View style={styles.emptyContainer}>
                       <Text style={styles.emptyEmoji}>💡</Text>
-                      <Text style={styles.emptyText}>No tips available yet</Text>
+                      <Text style={styles.emptyText}>No tips available</Text>
                       <Text style={styles.emptySubtext}>
-                        Generate a study plan to receive personalized study tips
+                        Try again later to get personalized study tips
                       </Text>
                     </View>
                   )}
@@ -1331,5 +1386,10 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
     flex: 1,
     lineHeight: 22,
+  },
+  tipsLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
