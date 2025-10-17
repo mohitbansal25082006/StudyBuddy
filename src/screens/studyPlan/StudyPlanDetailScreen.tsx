@@ -183,15 +183,35 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     const durationMinutes = Math.round((endTime.getTime() - sessionStartTime.getTime()) / 60000);
 
     try {
-      await createStudySession({
+      // Create session data with proper typing - include all fields upfront
+      const sessionData: {
+        user_id: string;
+        subject: string;
+        duration_minutes: number;
+        session_type: string;
+        notes: string;
+        completed_at: string;
+        tasks_completed?: string[];
+        study_plan_id?: string;
+      } = {
         user_id: user.id,
         subject: currentStudyPlan.subject,
         duration_minutes: durationMinutes,
         session_type: 'study_plan',
         notes: sessionNotes,
-        tasks_completed: [selectedTask.id],
-        study_plan_id: planId,
-      });
+        completed_at: new Date().toISOString(),
+      };
+      
+      // Add optional fields if they exist
+      if (selectedTask.id) {
+        sessionData.tasks_completed = [selectedTask.id];
+      }
+      
+      if (planId) {
+        sessionData.study_plan_id = planId;
+      }
+
+      await createStudySession(sessionData);
 
       const updatedPlanData = { ...currentStudyPlan.plan_data };
       
@@ -507,6 +527,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
 
   const renderResourceItem = useCallback(({ item, index }: { item: StudyResource, index: number }) => (
     <Pressable
+      key={`resource-${item.id}-${index}`}
       style={({ pressed }) => [
         styles.resourceItem,
         pressed && styles.pressedItem
@@ -566,6 +587,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     taskIndex: number 
   }) => (
     <Pressable
+      key={`task-week${weekIndex}-task${taskIndex}-${item.id}`}
       style={({ pressed }) => [
         styles.taskItem,
         pressed && styles.pressedItem
@@ -746,7 +768,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🎯 Learning Outcomes</Text>
               {currentStudyPlan.plan_data.learning_outcomes.map((outcome, index) => (
-                <View key={index} style={styles.listItem}>
+                <View key={`outcome-${index}`} style={styles.listItem}>
                   <View style={styles.bulletPoint} />
                   <Text style={styles.listItemText}>{outcome}</Text>
                 </View>
@@ -759,7 +781,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>🏆 Milestones</Text>
               {currentStudyPlan.plan_data.milestones.map((milestone, index) => (
-                <View key={index} style={styles.listItem}>
+                <View key={`milestone-${index}`} style={styles.listItem}>
                   <View style={styles.bulletPoint} />
                   <Text style={styles.listItemText}>{milestone}</Text>
                 </View>
@@ -772,7 +794,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>💡 Study Tips</Text>
               {currentStudyPlan.plan_data.tips.map((tip, index) => (
-                <View key={index} style={styles.tipCard}>
+                <View key={`tip-${index}`} style={styles.tipCard}>
                   <Text style={styles.tipText}>{tip}</Text>
                 </View>
               ))}
@@ -796,7 +818,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
             </View>
             
             {currentStudyPlan.plan_data.weeks.map((week, weekIndex) => (
-              <View key={weekIndex} style={styles.weekContainer}>
+              <View key={`week-${weekIndex}`} style={styles.weekContainer}>
                 <View style={styles.weekHeader}>
                   <View style={styles.weekTitleContainer}>
                     <Text style={styles.weekNumber}>Week {weekIndex + 1}</Text>
@@ -820,7 +842,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                   <View style={styles.objectivesContainer}>
                     <Text style={styles.objectivesLabel}>Objectives:</Text>
                     {week.objectives.map((objective, index) => (
-                      <Text key={index} style={styles.objectiveText}>
+                      <Text key={`objective-${weekIndex}-${index}`} style={styles.objectiveText}>
                         {index + 1}. {objective}
                       </Text>
                     ))}
@@ -1237,7 +1259,7 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.starsContainer}>
                   {[1, 2, 3, 4, 5].map((star) => (
                     <TouchableOpacity
-                      key={star}
+                      key={`star-${star}`}
                       onPress={() => setResourceRating(star)}
                       style={styles.starButton}
                       activeOpacity={0.7}

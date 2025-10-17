@@ -163,6 +163,7 @@ export interface StudySession {
   resources_used: string[]; // IDs of resources used
   rating?: number; // User's rating of the session
   productivity_score?: number; // AI-calculated productivity score
+  study_plan_id?: string;
 }
 
 // Calendar Event types
@@ -239,7 +240,7 @@ export type AppStackParamList = {
   Calendar: undefined;
   Progress: undefined;
   Subjects: undefined;
-  StudyPlanDetail: { planId: string };
+  StudyPlanDetail: { planId: string; startSession?: boolean };
   FlashcardReview: { 
     subject: string;
     flashcards?: Flashcard[]; // Optional array of flashcards to review

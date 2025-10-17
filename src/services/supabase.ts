@@ -460,19 +460,55 @@ export const getStudySessions = async (userId: string, limit?: number) => {
   return data;
 };
 
-// Create a new study session
+// Create a new study session - FIXED VERSION
 export const createStudySession = async (session: any) => {
-  const { data, error } = await supabase
-    .from('study_sessions')
-    .insert({
-      ...session,
-      completed_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
+  try {
+    // First, try to create the session with all fields
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .insert({
+        user_id: session.user_id,
+        subject: session.subject,
+        duration_minutes: session.duration_minutes,
+        session_type: session.session_type || 'study_plan',
+        notes: session.notes || null,
+        completed_at: new Date().toISOString(),
+        // Try to include these fields if they exist in the schema
+        ...(session.tasks_completed && { tasks_completed: session.tasks_completed }),
+        ...(session.resources_used && { resources_used: session.resources_used }),
+        ...(session.study_plan_id && { study_plan_id: session.study_plan_id }),
+      })
+      .select()
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      // If the error is about a missing column, try without those fields
+      if (error.code === 'PGRST204') {
+        console.warn('Some columns not found in study_sessions table, using fallback');
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('study_sessions')
+          .insert({
+            user_id: session.user_id,
+            subject: session.subject,
+            duration_minutes: session.duration_minutes,
+            session_type: session.session_type || 'study_plan',
+            notes: session.notes || null,
+            completed_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        
+        if (fallbackError) throw fallbackError;
+        return fallbackData;
+      }
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error creating study session:', error);
+    throw error;
+  }
 };
 
 // ============================================
@@ -848,29 +884,79 @@ export const addTaskNotes = async (planId: string, weekIndex: number, taskIndex:
 
 // Create a detailed study session
 export const createDetailedStudySession = async (session: any) => {
-  const { data, error } = await supabase
-    .from('study_sessions')
-    .insert({
-      ...session,
-      completed_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
+  try {
+    // First, try to create the session with all fields
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .insert({
+        user_id: session.user_id,
+        subject: session.subject,
+        duration_minutes: session.duration_minutes,
+        session_type: session.session_type || 'study_plan',
+        notes: session.notes || null,
+        completed_at: new Date().toISOString(),
+        // Try to include these fields if they exist in the schema
+        ...(session.tasks_completed && { tasks_completed: session.tasks_completed }),
+        ...(session.resources_used && { resources_used: session.resources_used }),
+        ...(session.study_plan_id && { study_plan_id: session.study_plan_id }),
+      })
+      .select()
+      .single();
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      // If the error is about a missing column, try without those fields
+      if (error.code === 'PGRST204') {
+        console.warn('Some columns not found in study_sessions table, using fallback');
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('study_sessions')
+          .insert({
+            user_id: session.user_id,
+            subject: session.subject,
+            duration_minutes: session.duration_minutes,
+            session_type: session.session_type || 'study_plan',
+            notes: session.notes || null,
+            completed_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        
+        if (fallbackError) throw fallbackError;
+        return fallbackData;
+      }
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error creating detailed study session:', error);
+    throw error;
+  }
 };
 
 // Get study sessions for a specific study plan
 export const getStudyPlanSessions = async (planId: string) => {
-  const { data, error } = await supabase
-    .from('study_sessions')
-    .select('*')
-    .eq('study_plan_id', planId)
-    .order('completed_at', { ascending: false });
+  try {
+    // First try with the study_plan_id column
+    const { data, error } = await supabase
+      .from('study_sessions')
+      .select('*')
+      .eq('study_plan_id', planId)
+      .order('completed_at', { ascending: false });
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      // If the column doesn't exist, return empty array
+      if (error.code === 'PGRST204') {
+        console.warn('study_plan_id column not found in study_sessions table');
+        return [];
+      }
+      throw error;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error getting study plan sessions:', error);
+    return [];
+  }
 };
 
 // ============================================
