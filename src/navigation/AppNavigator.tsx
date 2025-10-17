@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\navigation\AppNavigator.tsx
 // ============================================
 // APP NAVIGATOR
-// Enhanced for calendar live refresh
+// Enhanced for calendar live refresh and AI features
 // ============================================
 
 import React from 'react';
@@ -22,6 +22,11 @@ import { AddEventScreen } from '../screens/calendar/AddEventScreen';
 import { EditEventScreen } from '../screens/calendar/EditEventScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { SubjectsScreen } from '../screens/subjects/SubjectsScreen';
+
+// AI Calendar Screens
+import { AIScheduleScreen } from '../screens/calendar/ai/AIScheduleScreen';
+import { AIGoalScreen } from '../screens/calendar/ai/AIGoalScreen';
+import { AIWeeklySummaryScreen } from '../screens/calendar/ai/AIWeeklySummaryScreen';
 
 // Types & Store
 import { AppStackParamList } from '../types';
@@ -273,6 +278,32 @@ export const AppNavigator: React.FC = () => {
         component={EditEventScreen} 
         options={{
           presentation: 'modal',
+        }}
+      />
+      
+      {/* AI Calendar Screens */}
+      <Stack.Screen 
+        name="AISchedule" 
+        component={AIScheduleScreen} 
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="AIGoal" 
+        component={AIGoalScreen} 
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="AIWeeklySummary" 
+        component={AIWeeklySummaryScreen} 
+        options={{
+          presentation: 'modal',
+          headerShown: false,
         }}
       />
     </Stack.Navigator>

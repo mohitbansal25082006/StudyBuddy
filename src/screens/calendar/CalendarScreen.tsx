@@ -1,11 +1,11 @@
 // F:\StudyBuddy\src\screens\calendar\CalendarScreen.tsx
 // ============================================
 // CALENDAR SCREEN
-// Beautiful Google Calendar integration for study scheduling
+// Enhanced with AI features
 // ============================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, RefreshControl, Dimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, RefreshControl, Dimensions, Modal } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,16 +15,24 @@ import {
   updateCalendarEvent, 
   deleteCalendarEvent 
 } from '../../services/supabase';
-import { CalendarEvent } from '../../types';
+import { generateReminderText, generateWeeklySummary } from '../../services/calendar/calendarAI';
+import { CalendarEvent, AIWeeklySummary, AIWeeklySummaryRequest } from '../../types';
 import { Button } from '../../components/Button';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { CalendarEventComponent } from '../../components/CalendarEvent';
+import { AIScheduleGenerator } from '../../components/calendar/AIScheduleGenerator';
+import { AIGoalConverter } from '../../components/calendar/AIGoalConverter';
+import { AIWeeklySummary as AIWeeklySummaryComponent } from '../../components/calendar/AIWeeklySummary';
 
 const { width, height } = Dimensions.get('window');
 
+// Valid event types based on database constraint
+const VALID_EVENT_TYPES = ['study_session', 'review', 'exam'] as const;
+type ValidEventType = typeof VALID_EVENT_TYPES[number];
+
 export const CalendarScreen = ({ navigation }: any) => {
-  const { user } = useAuthStore();
-  const { calendarEvents, fetchCalendarEvents } = useStudyStore();
+  const { user, profile } = useAuthStore();
+  const { calendarEvents, fetchCalendarEvents, refreshCalendarEvents } = useStudyStore();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,6 +40,13 @@ export const CalendarScreen = ({ navigation }: any) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [eventsForSelectedDate, setEventsForSelectedDate] = useState<CalendarEvent[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // AI feature states
+  const [showAISchedule, setShowAISchedule] = useState(false);
+  const [showAIGoal, setShowAIGoal] = useState(false);
+  const [showWeeklySummary, setShowWeeklySummary] = useState(false);
+  const [weeklySummary, setWeeklySummary] = useState<AIWeeklySummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   
   // Refresh calendar when screen comes into focus
   useFocusEffect(
@@ -103,14 +118,16 @@ export const CalendarScreen = ({ navigation }: any) => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-      const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-      
-      await fetchCalendarEvents(
-        user?.id || '',
-        startOfMonth.toISOString(),
-        endOfMonth.toISOString()
-      );
+      if (user) {
+        const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+        const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+        
+        await fetchCalendarEvents(
+          user.id,
+          startOfMonth.toISOString(),
+          endOfMonth.toISOString()
+        );
+      }
     } catch (error) {
       console.error('Error refreshing calendar:', error);
     } finally {
@@ -196,6 +213,201 @@ export const CalendarScreen = ({ navigation }: any) => {
     navigation.navigate('AddEvent', { date: selectedDate.toISOString() });
   };
 
+  // Validate and fix event type
+  const validateEventType = (eventType: string): ValidEventType => {
+    if (VALID_EVENT_TYPES.includes(eventType as ValidEventType)) {
+      return eventType as ValidEventType;
+    }
+    
+    // Default to 'study_session' if invalid
+    console.warn(`Invalid event type: ${eventType}, defaulting to 'study_session'`);
+    return 'study_session';
+  };
+
+  // Handle AI schedule generation
+  const handleScheduleGenerated = async (schedule: any) => {
+    if (!user) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    try {
+      console.log('Generated schedule:', schedule);
+      
+      // Create events from the generated schedule
+      const createdEvents = [];
+      for (const event of schedule.events) {
+        try {
+          // Validate event data
+          if (!event.title || !event.subject || !event.start_time || !event.end_time) {
+            console.warn('Skipping invalid event:', event);
+            continue;
+          }
+
+          // Validate and fix event type
+          const validEventType = validateEventType(event.event_type || 'study_session');
+
+          // Create the calendar event
+          const createdEvent = await createCalendarEvent({
+            user_id: user.id,
+            title: event.title,
+            description: event.description || '',
+            start_time: event.start_time,
+            end_time: event.end_time,
+            subject: event.subject,
+            event_type: validEventType,
+          });
+          
+          createdEvents.push(createdEvent);
+          console.log('Created event:', createdEvent);
+        } catch (eventError) {
+          console.error('Error creating individual event:', eventError);
+        }
+      }
+      
+      if (createdEvents.length > 0) {
+        // Force a complete refresh by incrementing the refresh key
+        setRefreshKey(prev => prev + 1);
+        
+        Alert.alert(
+          'Success', 
+          `Successfully added ${createdEvents.length} events to your calendar!`
+        );
+      } else {
+        Alert.alert('Warning', 'No valid events were created from the schedule');
+      }
+    } catch (error: any) {
+      console.error('Error adding generated schedule:', error);
+      Alert.alert('Error', error.message || 'Failed to add schedule to calendar');
+    }
+  };
+
+  // Handle AI goal conversion
+  const handleGoalConverted = async (schedule: any) => {
+    if (!user) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    try {
+      console.log('Converted goal schedule:', schedule);
+      
+      // Create events from the converted schedule
+      const createdEvents = [];
+      for (const event of schedule.events) {
+        try {
+          // Validate event data
+          if (!event.title || !event.subject || !event.start_time || !event.end_time) {
+            console.warn('Skipping invalid event:', event);
+            continue;
+          }
+
+          // Validate and fix event type
+          const validEventType = validateEventType(event.event_type || 'study_session');
+
+          // Create the calendar event
+          const createdEvent = await createCalendarEvent({
+            user_id: user.id,
+            title: event.title,
+            description: event.description || '',
+            start_time: event.start_time,
+            end_time: event.end_time,
+            subject: event.subject,
+            event_type: validEventType,
+          });
+          
+          createdEvents.push(createdEvent);
+          console.log('Created event from goal:', createdEvent);
+        } catch (eventError) {
+          console.error('Error creating individual event from goal:', eventError);
+        }
+      }
+      
+      if (createdEvents.length > 0) {
+        // Force a complete refresh by incrementing the refresh key
+        setRefreshKey(prev => prev + 1);
+        
+        Alert.alert(
+          'Success', 
+          `Successfully added ${createdEvents.length} events to your calendar!`
+        );
+      } else {
+        Alert.alert('Warning', 'No valid events were created from the goal');
+      }
+    } catch (error: any) {
+      console.error('Error adding converted schedule:', error);
+      Alert.alert('Error', error.message || 'Failed to add schedule to calendar');
+    }
+  };
+
+  // Handle generating weekly summary
+  const handleGenerateWeeklySummary = async () => {
+    if (!user) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+
+    setLoadingSummary(true);
+    
+    try {
+      // Calculate week start and end
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - dayOfWeek);
+      weekStart.setHours(0, 0, 0, 0);
+      
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+      
+      // Get study sessions for the week
+      const studySessions = calendarEvents
+        .filter(event => {
+          const eventDate = new Date(event.start_time);
+          return eventDate >= weekStart && eventDate <= weekEnd;
+        })
+        .map(event => {
+          const startDate = new Date(event.start_time);
+          const endDate = new Date(event.end_time);
+          const duration = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60));
+          
+          return {
+            subject: event.subject,
+            duration,
+            date: startDate.toISOString().split('T')[0],
+            completed: true, // Assuming all calendar events are completed
+          };
+        });
+      
+      // For flashcard reviews, we would need to fetch from the database
+      // For now, we'll use empty data
+      const flashcardReviews: any[] = [];
+      
+      // For goals, we would need to fetch from the database
+      // For now, we'll use empty data
+      const goals: any[] = [];
+      
+      const request: AIWeeklySummaryRequest = {
+        userName: profile?.full_name || 'Student',
+        weekStart: weekStart.toISOString().split('T')[0],
+        weekEnd: weekEnd.toISOString().split('T')[0],
+        studySessions,
+        flashcardReviews,
+        goals,
+      };
+      
+      const summary = await generateWeeklySummary(request);
+      setWeeklySummary(summary);
+      setShowWeeklySummary(true);
+    } catch (error: any) {
+      console.error('Error generating weekly summary:', error);
+      Alert.alert('Error', error.message || 'Failed to generate weekly summary');
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
   // Format month name
   const formatMonth = (date: Date) => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -212,6 +424,7 @@ export const CalendarScreen = ({ navigation }: any) => {
 
   const calendarDays = generateCalendarDays();
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const subjects = profile?.subjects || [];
 
   return (
     <View style={styles.container}>
@@ -219,6 +432,9 @@ export const CalendarScreen = ({ navigation }: any) => {
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         bounces={true}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* Beautiful Header */}
         <View style={styles.headerContainer}>
@@ -247,6 +463,43 @@ export const CalendarScreen = ({ navigation }: any) => {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+
+        {/* AI Features Bar */}
+        <View style={styles.aiFeaturesContainer}>
+          <TouchableOpacity
+            style={styles.aiFeatureButton}
+            onPress={() => setShowAISchedule(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.aiFeatureIcon}>
+              <Text style={styles.aiFeatureIconText}>🤖</Text>
+            </View>
+            <Text style={styles.aiFeatureText}>AI Schedule</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.aiFeatureButton}
+            onPress={() => setShowAIGoal(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.aiFeatureIcon}>
+              <Text style={styles.aiFeatureIconText}>🎯</Text>
+            </View>
+            <Text style={styles.aiFeatureText}>AI Goal</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.aiFeatureButton}
+            onPress={handleGenerateWeeklySummary}
+            activeOpacity={0.8}
+            disabled={loadingSummary}
+          >
+            <View style={styles.aiFeatureIcon}>
+              <Text style={styles.aiFeatureIconText}>📊</Text>
+            </View>
+            <Text style={styles.aiFeatureText}>Weekly Summary</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Beautiful Calendar */}
@@ -338,20 +591,54 @@ export const CalendarScreen = ({ navigation }: any) => {
                     <Text style={styles.emptyIconText}>📅</Text>
                   </View>
                   <Text style={styles.emptyTitle}>No Events</Text>
-                  <Text style={styles.emptySubtitle}>Tap + to add your first event</Text>
-                  <TouchableOpacity 
-                    onPress={handleAddEvent}
-                    style={styles.emptyAddButton}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.emptyAddButtonText}>Add Event</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.emptySubtitle}>Tap + to add your first event or use AI to generate a schedule</Text>
+                  <View style={styles.emptyButtonsContainer}>
+                    <TouchableOpacity 
+                      onPress={handleAddEvent}
+                      style={styles.emptyAddButton}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.emptyAddButtonText}>Add Event</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      onPress={() => setShowAISchedule(true)}
+                      style={styles.emptyAIButton}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.emptyAIButtonText}>AI Schedule</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             </View>
           </View>
         </View>
       </ScrollView>
+      
+      {/* AI Schedule Generator Modal */}
+      <AIScheduleGenerator
+        visible={showAISchedule}
+        onClose={() => setShowAISchedule(false)}
+        onScheduleGenerated={handleScheduleGenerated}
+        subjects={subjects}
+      />
+      
+      {/* AI Goal Converter Modal */}
+      <AIGoalConverter
+        visible={showAIGoal}
+        onClose={() => setShowAIGoal(false)}
+        onGoalConverted={handleGoalConverted}
+        subjects={subjects}
+      />
+      
+      {/* AI Weekly Summary Modal */}
+      <AIWeeklySummaryComponent
+        visible={showWeeklySummary}
+        onClose={() => setShowWeeklySummary(false)}
+        summary={weeklySummary}
+      />
+      
+      {loadingSummary && <LoadingSpinner message="Generating weekly summary..." />}
     </View>
   );
 };
@@ -422,10 +709,47 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
+  // AI Features Bar
+  aiFeaturesContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  aiFeatureButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    minWidth: width * 0.25,
+  },
+  aiFeatureIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  aiFeatureIconText: {
+    fontSize: 18,
+  },
+  aiFeatureText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+  },
   // Beautiful Calendar - Compact
   calendarWrapper: {
     paddingHorizontal: 16,
-    marginTop: -10,
+    marginTop: 12,
     marginBottom: 12,
   },
   calendarContainer: {
@@ -520,7 +844,7 @@ const styles = StyleSheet.create({
   eventsWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 24,
-    minHeight: height * 0.55, // Takes at least 55% of screen height
+    minHeight: height * 0.45, // Takes at least 45% of screen height
   },
   eventsContainer: {
     backgroundColor: '#FFFFFF',
@@ -533,7 +857,7 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.1)',
-    minHeight: height * 0.5, // Ensures minimum height
+    minHeight: height * 0.4, // Ensures minimum height
   },
   eventsHeader: {
     flexDirection: 'row',
@@ -578,7 +902,7 @@ const styles = StyleSheet.create({
     lineHeight: 28,
   },
   eventsList: {
-    minHeight: 300, // Minimum height for events list
+    minHeight: 200, // Minimum height for events list
   },
   eventWrapper: {
     marginBottom: 12,
@@ -586,8 +910,8 @@ const styles = StyleSheet.create({
   emptyContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
-    minHeight: 300,
+    paddingVertical: 40,
+    minHeight: 200,
   },
   emptyIcon: {
     width: 80,
@@ -614,8 +938,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingHorizontal: 20,
   },
+  emptyButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
   emptyAddButton: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 12,
     backgroundColor: '#6366F1',
     borderRadius: 12,
@@ -624,8 +953,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
+    marginHorizontal: 8,
   },
   emptyAddButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  emptyAIButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#10B981',
+    borderRadius: 12,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    marginHorizontal: 8,
+  },
+  emptyAIButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',

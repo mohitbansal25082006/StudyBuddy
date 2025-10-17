@@ -221,6 +221,96 @@ export interface StudyPlanPreferences {
   focus_areas: string[];
 }
 
+// AI Calendar types
+export interface AIScheduleRequest {
+  subjects: string[];
+  preferredStudyTimes: string[];
+  durationDays: number;
+  dailyHours: number;
+  upcomingDeadlines?: { subject: string; date: string; description: string }[];
+  difficultyLevels?: { subject: string; level: string }[];
+  avoidTimes?: string[];
+}
+export interface AIGeneratedSchedule {
+  title: string;
+  description: string;
+  events: {
+    title: string;
+    subject: string;
+    start_time: string;
+    end_time: string;
+    description: string;
+    event_type: 'study_session' | 'review' | 'exam';
+  }[];
+}
+export interface AIReminderRequest {
+  userName: string;
+  subject: string;
+  topic: string;
+  progress: number; // 0-100
+  streak: number;
+  studyTime: number; // minutes
+  reminderType: 'motivational' | 'contextual' | 'break' | 'deadline';
+}
+export interface AIGoalRequest {
+  goal: string;
+  subject: string;
+  deadline: string;
+  availableDays: string[]; // Days of the week available
+  availableTimes: string[]; // Time slots available
+  sessionDuration: number; // Minutes per session
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+}
+export interface AIConvertedSchedule {
+  title: string;
+  description: string;
+  events: {
+    title: string;
+    subject: string;
+    start_time: string;
+    end_time: string;
+    description: string;
+    event_type: 'study_session' | 'review' | 'exam';
+  }[];
+}
+export interface AIWeeklySummaryRequest {
+  userName: string;
+  weekStart: string; // YYYY-MM-DD
+  weekEnd: string; // YYYY-MM-DD
+  studySessions: {
+    subject: string;
+    duration: number; // minutes
+    date: string; // YYYY-MM-DD
+    completed: boolean;
+  }[];
+  flashcardReviews: {
+    subject: string;
+    correct: number;
+    incorrect: number;
+    date: string; // YYYY-MM-DD
+  }[];
+  goals: {
+    goal: string;
+    completed: boolean;
+    subject: string;
+  }[];
+}
+export interface AIWeeklySummary {
+  title: string;
+  overview: string;
+  stats: {
+    totalStudyTime: number; // minutes
+    totalSessions: number;
+    successRate: number; // percentage
+    mostStudiedSubject: string;
+    leastStudiedSubject: string;
+    streak: number;
+  };
+  achievements: string[];
+  recommendations: string[];
+  nextWeekFocus: string[];
+}
+
 // Props for navigation screens
 export type AuthStackParamList = {
   Splash: undefined;
@@ -248,4 +338,7 @@ export type AppStackParamList = {
   AddFlashcard: { subject: string };
   AddEvent: undefined;
   EditEvent: { eventId: string };
+  AISchedule: undefined;
+  AIGoal: undefined;
+  AIWeeklySummary: undefined;
 };
