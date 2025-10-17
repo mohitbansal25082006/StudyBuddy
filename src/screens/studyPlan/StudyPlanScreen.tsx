@@ -302,7 +302,7 @@ export const StudyPlanScreen = ({ navigation }: any) => {
       
       Alert.alert(
         'Success! 🎉',
-        'Your personalized study plan has been created successfully!',
+        `Your personalized study plan with ${formData.duration_weeks} weeks and ${formData.daily_hours} hours per day has been created successfully!`,
         [
           {
             text: 'View Plan',

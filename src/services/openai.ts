@@ -7,12 +7,75 @@
 import { StudyPlanForm, StudyPlanData, StudyWeek, StudyResource, StudyTask } from '../types';
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+const SERPAPI_API_KEY = process.env.EXPO_PUBLIC_SERPAPI_API_KEY;
+
+// Function to search for real resources using SERPApi
+const searchForResources = async (subject: string, topics: string[], difficulty: string): Promise<any[]> => {
+  if (!SERPAPI_API_KEY) {
+    console.warn('SERPApi key not configured, using placeholder resources');
+    return [];
+  }
+
+  try {
+    // Create search queries based on subject and topics
+    const searchQueries = [
+      `${subject} ${difficulty} tutorial`,
+      `${subject} ${difficulty} course`,
+      `${subject} ${difficulty} practice problems`,
+      ...topics.slice(0, 2).map(topic => `${subject} ${topic} tutorial`)
+    ];
+
+    const resources = [];
+    
+    for (const query of searchQueries.slice(0, 3)) { // Limit to 3 queries to avoid rate limits
+      const response = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${SERPAPI_API_KEY}`);
+      
+      if (!response.ok) {
+        console.error(`SERPApi error for query "${query}":`, response.status);
+        continue;
+      }
+      
+      const data = await response.json();
+      
+      if (data.organic_results && data.organic_results.length > 0) {
+        // Take the top 2 results from each query
+        const topResults = data.organic_results.slice(0, 2).map((result: any) => ({
+          title: result.title,
+          url: result.link,
+          description: result.snippet || '',
+          type: result.link.includes('youtube') || result.link.includes('watch') ? 'video' : 
+                result.link.includes('coursera') || result.link.includes('udemy') || result.link.includes('edx') ? 'course' :
+                result.link.includes('pdf') || result.link.includes('article') ? 'article' : 'website',
+          verified: false, // We'll verify these later
+          rating: 0,
+          tags: [subject, difficulty],
+          difficulty: difficulty as 'beginner' | 'intermediate' | 'advanced'
+        }));
+        
+        resources.push(...topResults);
+      }
+    }
+    
+    return resources;
+  } catch (error) {
+    console.error('Error searching for resources with SERPApi:', error);
+    return [];
+  }
+};
 
 // Generate a study plan using OpenAI
 export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyPlanData> => {
   if (!OPENAI_API_KEY) {
     throw new Error('OpenAI API key is not configured');
   }
+
+  // Calculate total study hours and distribute across weeks
+  const totalStudyHours = formData.duration_weeks * formData.daily_hours * 7; // hours per week
+  const hoursPerWeek = formData.daily_hours * 7;
+  
+  // Calculate approximate number of topics based on duration
+  const topicsPerWeek = Math.max(2, Math.min(5, Math.ceil(10 / formData.duration_weeks)));
+  const totalTopics = formData.duration_weeks * topicsPerWeek;
 
   const prompt = `
     Create a detailed study plan for a student with the following preferences:
@@ -23,6 +86,9 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
     Daily Study Time: ${formData.daily_hours} hours
     Learning Style: ${formData.learning_style}
     Goals: ${formData.goals}
+    
+    IMPORTANT: Create EXACTLY ${formData.duration_weeks} weeks of content, with each week containing approximately ${topicsPerWeek} topics.
+    Each week should have study tasks that total approximately ${hoursPerWeek} hours (${formData.daily_hours} hours per day).
     
     Please provide a structured study plan in JSON format with the following structure:
     {
@@ -35,16 +101,16 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
           "title": "Week 1: Introduction",
           "topics": ["Topic 1", "Topic 2"],
           "objectives": ["Objective 1", "Objective 2"],
-          "estimated_total_hours": 10,
+          "estimated_total_hours": ${hoursPerWeek},
           "tasks": [
             {
               "id": "task1",
               "title": "Task Title",
               "description": "Task description",
-              "duration_minutes": 60,
+              "duration_minutes": ${formData.daily_hours * 30},
               "completed": false,
               "type": "reading",
-              "resources": ["resource_id1"],
+              "resources": [],
               "difficulty": "beginner",
               "priority": "medium"
             }
@@ -70,7 +136,10 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
     
     Make sure the plan is tailored to the ${formData.learning_style} learning style.
     For a ${formData.difficulty_level} level student studying ${formData.subject}.
-    The plan should span ${formData.duration_weeks} weeks with approximately ${formData.daily_hours} hours of study per day.
+    The plan should span EXACTLY ${formData.duration_weeks} weeks with approximately ${formData.daily_hours} hours of study per day.
+    
+    CRITICAL: You must create content for ALL ${formData.duration_weeks} weeks, not just 1-2 weeks.
+    Each week should have a reasonable amount of content that can be completed in ${hoursPerWeek} hours.
     
     Return only valid JSON without any additional text or formatting.
   `;
@@ -94,7 +163,7 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
             content: prompt,
           },
         ],
-        max_tokens: 3000, // Increased from 2000 to handle longer responses
+        max_tokens: 4000, // Increased to handle longer responses
         temperature: 0.7,
       }),
     });
@@ -123,29 +192,87 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
     
     // Try to parse the JSON response
     try {
-      const studyPlanData = JSON.parse(content);
+      let studyPlanData = JSON.parse(content);
       
       // Validate the structure of the response
       if (!studyPlanData.weeks || !Array.isArray(studyPlanData.weeks)) {
         throw new Error('Invalid response format: weeks array is missing');
       }
       
-      // Ensure all required fields are present
+      // Check if we have the correct number of weeks
+      if (studyPlanData.weeks.length !== formData.duration_weeks) {
+        console.warn(`Expected ${formData.duration_weeks} weeks but got ${studyPlanData.weeks.length}. Adjusting...`);
+        
+        // If we have too few weeks, extend the plan
+        if (studyPlanData.weeks.length < formData.duration_weeks) {
+          const lastWeek = studyPlanData.weeks[studyPlanData.weeks.length - 1];
+          const additionalWeeksNeeded = formData.duration_weeks - studyPlanData.weeks.length;
+          
+          for (let i = 0; i < additionalWeeksNeeded; i++) {
+            const weekNumber = studyPlanData.weeks.length + 1;
+            const newWeek = {
+              week: weekNumber,
+              title: `Week ${weekNumber}: Advanced ${formData.subject} Topics`,
+              topics: [`Advanced Topic ${weekNumber}`, `Practice ${weekNumber}`],
+              objectives: [`Master advanced concepts for week ${weekNumber}`, `Apply knowledge through practice`],
+              estimated_total_hours: hoursPerWeek,
+              tasks: [
+                {
+                  id: `task${weekNumber}_1`,
+                  title: `Study advanced ${formData.subject} concepts`,
+                  description: `Study advanced concepts for week ${weekNumber}`,
+                  duration_minutes: formData.daily_hours * 30,
+                  completed: false,
+                  type: 'reading',
+                  resources: [],
+                  difficulty: formData.difficulty_level,
+                  priority: 'medium'
+                },
+                {
+                  id: `task${weekNumber}_2`,
+                  title: `Practice ${formData.subject} problems`,
+                  description: `Practice problems for week ${weekNumber}`,
+                  duration_minutes: formData.daily_hours * 30,
+                  completed: false,
+                  type: 'practice',
+                  resources: [],
+                  difficulty: formData.difficulty_level,
+                  priority: 'medium'
+                }
+              ]
+            };
+            studyPlanData.weeks.push(newWeek);
+          }
+        }
+        // If we have too many weeks, truncate the plan
+        else if (studyPlanData.weeks.length > formData.duration_weeks) {
+          studyPlanData.weeks = studyPlanData.weeks.slice(0, formData.duration_weeks);
+        }
+      }
+      
+      // Ensure all required fields are present and adjust task durations
       studyPlanData.weeks = studyPlanData.weeks.map((week: any, index: number) => {
         if (!week.week) week.week = index + 1;
         if (!week.title) week.title = `Week ${index + 1}`;
         if (!week.topics) week.topics = [];
         if (!week.objectives) week.objectives = [];
-        if (!week.estimated_total_hours) week.estimated_total_hours = formData.daily_hours * 7;
+        if (!week.estimated_total_hours) week.estimated_total_hours = hoursPerWeek;
         if (!week.tasks) week.tasks = [];
         
-        // Ensure all tasks have required fields
+        // Calculate total minutes for the week based on daily hours
+        const totalMinutesForWeek = formData.daily_hours * 60 * 7;
+        
+        // Ensure all tasks have required fields and adjust durations
         week.tasks = week.tasks.map((task: any, taskIndex: number): StudyTask => {
+          // Distribute time evenly among tasks, but ensure each task has a reasonable minimum
+          const taskCount = week.tasks.length;
+          const minutesPerTask = Math.max(30, Math.floor(totalMinutesForWeek / taskCount));
+          
           return {
             id: task.id || `task${index + 1}_${taskIndex + 1}`,
             title: task.title || 'Untitled Task',
             description: task.description || 'No description',
-            duration_minutes: task.duration_minutes || 60,
+            duration_minutes: task.duration_minutes || minutesPerTask,
             completed: task.completed || false,
             type: task.type || 'reading',
             resources: task.resources || [],
@@ -157,21 +284,54 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
         return week as StudyWeek;
       });
       
+      // Search for real resources using SERPApi
+      const allTopics = studyPlanData.weeks.flatMap((week: StudyWeek) => week.topics);
+      const realResources = await searchForResources(formData.subject, allTopics, formData.difficulty_level);
+      
       // Ensure resources array exists and has required fields
       if (!studyPlanData.resources) studyPlanData.resources = [];
-      studyPlanData.resources = studyPlanData.resources.map((resource: any): StudyResource => {
-        return {
-          id: resource.id || `resource_${Math.random().toString(36).substr(2, 9)}`,
-          title: resource.title || 'Untitled Resource',
-          type: resource.type || 'website',
-          url: resource.url || 'https://example.com',
-          description: resource.description || 'No description',
-          verified: resource.verified || false,
-          rating: resource.rating || 0,
-          tags: resource.tags || [],
-          difficulty: resource.difficulty || formData.difficulty_level
-        };
-      });
+      
+      // Add real resources if we found any
+      if (realResources.length > 0) {
+        // Add real resources with proper IDs
+        const resourcesWithIds = realResources.map((resource, index) => ({
+          ...resource,
+          id: `real_resource_${index + 1}`
+        }));
+        
+        // Combine existing resources with real ones
+        studyPlanData.resources = [...resourcesWithIds, ...studyPlanData.resources];
+      }
+      
+      // If we don't have enough real resources, add placeholder resources
+      if (studyPlanData.resources.length < 3) {
+        const placeholderResources = [
+          {
+            id: `placeholder_resource_1`,
+            title: `${formData.subject} Textbook`,
+            type: 'book',
+            url: 'https://example.com/textbook',
+            description: `Comprehensive textbook for ${formData.subject}`,
+            verified: false,
+            rating: 4.0,
+            tags: [formData.subject, 'textbook'],
+            difficulty: formData.difficulty_level
+          },
+          {
+            id: `placeholder_resource_2`,
+            title: `${formData.subject} Video Tutorials`,
+            type: 'video',
+            url: 'https://example.com/videos',
+            description: `Video tutorials covering ${formData.subject} concepts`,
+            verified: false,
+            rating: 4.0,
+            tags: [formData.subject, 'video', 'tutorial'],
+            difficulty: formData.difficulty_level
+          }
+        ];
+        
+        studyPlanData.resources = [...studyPlanData.resources, ...placeholderResources];
+      }
       
       // Ensure milestones array exists
       if (!studyPlanData.milestones) studyPlanData.milestones = [];
@@ -216,29 +376,87 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
-          const studyPlanData = JSON.parse(jsonMatch[0]);
+          let studyPlanData = JSON.parse(jsonMatch[0]);
           
           // Apply the same validation as above
           if (!studyPlanData.weeks || !Array.isArray(studyPlanData.weeks)) {
             throw new Error('Invalid response format: weeks array is missing');
           }
           
-          // Ensure all required fields are present
+          // Check if we have the correct number of weeks
+          if (studyPlanData.weeks.length !== formData.duration_weeks) {
+            console.warn(`Expected ${formData.duration_weeks} weeks but got ${studyPlanData.weeks.length}. Adjusting...`);
+            
+            // If we have too few weeks, extend the plan
+            if (studyPlanData.weeks.length < formData.duration_weeks) {
+              const lastWeek = studyPlanData.weeks[studyPlanData.weeks.length - 1];
+              const additionalWeeksNeeded = formData.duration_weeks - studyPlanData.weeks.length;
+              
+              for (let i = 0; i < additionalWeeksNeeded; i++) {
+                const weekNumber = studyPlanData.weeks.length + 1;
+                const newWeek = {
+                  week: weekNumber,
+                  title: `Week ${weekNumber}: Advanced ${formData.subject} Topics`,
+                  topics: [`Advanced Topic ${weekNumber}`, `Practice ${weekNumber}`],
+                  objectives: [`Master advanced concepts for week ${weekNumber}`, `Apply knowledge through practice`],
+                  estimated_total_hours: hoursPerWeek,
+                  tasks: [
+                    {
+                      id: `task${weekNumber}_1`,
+                      title: `Study advanced ${formData.subject} concepts`,
+                      description: `Study advanced concepts for week ${weekNumber}`,
+                      duration_minutes: formData.daily_hours * 30,
+                      completed: false,
+                      type: 'reading',
+                      resources: [],
+                      difficulty: formData.difficulty_level,
+                      priority: 'medium'
+                    },
+                    {
+                      id: `task${weekNumber}_2`,
+                      title: `Practice ${formData.subject} problems`,
+                      description: `Practice problems for week ${weekNumber}`,
+                      duration_minutes: formData.daily_hours * 30,
+                      completed: false,
+                      type: 'practice',
+                      resources: [],
+                      difficulty: formData.difficulty_level,
+                      priority: 'medium'
+                    }
+                  ]
+                };
+                studyPlanData.weeks.push(newWeek);
+              }
+            }
+            // If we have too many weeks, truncate the plan
+            else if (studyPlanData.weeks.length > formData.duration_weeks) {
+              studyPlanData.weeks = studyPlanData.weeks.slice(0, formData.duration_weeks);
+            }
+          }
+          
+          // Ensure all required fields are present and adjust task durations
           studyPlanData.weeks = studyPlanData.weeks.map((week: any, index: number) => {
             if (!week.week) week.week = index + 1;
             if (!week.title) week.title = `Week ${index + 1}`;
             if (!week.topics) week.topics = [];
             if (!week.objectives) week.objectives = [];
-            if (!week.estimated_total_hours) week.estimated_total_hours = formData.daily_hours * 7;
+            if (!week.estimated_total_hours) week.estimated_total_hours = hoursPerWeek;
             if (!week.tasks) week.tasks = [];
             
-            // Ensure all tasks have required fields
+            // Calculate total minutes for the week based on daily hours
+            const totalMinutesForWeek = formData.daily_hours * 60 * 7;
+            
+            // Ensure all tasks have required fields and adjust durations
             week.tasks = week.tasks.map((task: any, taskIndex: number): StudyTask => {
+              // Distribute time evenly among tasks, but ensure each task has a reasonable minimum
+              const taskCount = week.tasks.length;
+              const minutesPerTask = Math.max(30, Math.floor(totalMinutesForWeek / taskCount));
+              
               return {
                 id: task.id || `task${index + 1}_${taskIndex + 1}`,
                 title: task.title || 'Untitled Task',
                 description: task.description || 'No description',
-                duration_minutes: task.duration_minutes || 60,
+                duration_minutes: task.duration_minutes || minutesPerTask,
                 completed: task.completed || false,
                 type: task.type || 'reading',
                 resources: task.resources || [],
@@ -250,21 +468,54 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
             return week as StudyWeek;
           });
           
+          // Search for real resources using SERPApi
+          const allTopics = studyPlanData.weeks.flatMap((week: StudyWeek) => week.topics);
+          const realResources = await searchForResources(formData.subject, allTopics, formData.difficulty_level);
+          
           // Ensure resources array exists and has required fields
           if (!studyPlanData.resources) studyPlanData.resources = [];
-          studyPlanData.resources = studyPlanData.resources.map((resource: any): StudyResource => {
-            return {
-              id: resource.id || `resource_${Math.random().toString(36).substr(2, 9)}`,
-              title: resource.title || 'Untitled Resource',
-              type: resource.type || 'website',
-              url: resource.url || 'https://example.com',
-              description: resource.description || 'No description',
-              verified: resource.verified || false,
-              rating: resource.rating || 0,
-              tags: resource.tags || [],
-              difficulty: resource.difficulty || formData.difficulty_level
-            };
-          });
+          
+          // Add real resources if we found any
+          if (realResources.length > 0) {
+            // Add real resources with proper IDs
+            const resourcesWithIds = realResources.map((resource, index) => ({
+              ...resource,
+              id: `real_resource_${index + 1}`
+            }));
+            
+            // Combine existing resources with real ones
+            studyPlanData.resources = [...resourcesWithIds, ...studyPlanData.resources];
+          }
+          
+          // If we don't have enough real resources, add placeholder resources
+          if (studyPlanData.resources.length < 3) {
+            const placeholderResources = [
+              {
+                id: `placeholder_resource_1`,
+                title: `${formData.subject} Textbook`,
+                type: 'book',
+                url: 'https://example.com/textbook',
+                description: `Comprehensive textbook for ${formData.subject}`,
+                verified: false,
+                rating: 4.0,
+                tags: [formData.subject, 'textbook'],
+                difficulty: formData.difficulty_level
+              },
+              {
+                id: `placeholder_resource_2`,
+                title: `${formData.subject} Video Tutorials`,
+                type: 'video',
+                url: 'https://example.com/videos',
+                description: `Video tutorials covering ${formData.subject} concepts`,
+                verified: false,
+                rating: 4.0,
+                tags: [formData.subject, 'video', 'tutorial'],
+                difficulty: formData.difficulty_level
+              }
+            ];
+            
+            studyPlanData.resources = [...studyPlanData.resources, ...placeholderResources];
+          }
           
           // Ensure milestones array exists
           if (!studyPlanData.milestones) studyPlanData.milestones = [];
@@ -320,7 +571,8 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
 // Create a fallback study plan in case OpenAI fails
 const createFallbackStudyPlan = (formData: StudyPlanForm): StudyPlanData => {
   const weeks: StudyWeek[] = [];
-  const topicsPerWeek = Math.ceil(10 / formData.duration_weeks); // Approximate number of topics
+  const topicsPerWeek = Math.max(2, Math.min(5, Math.ceil(10 / formData.duration_weeks))); // Approximate number of topics
+  const hoursPerWeek = formData.daily_hours * 7;
   
   for (let i = 1; i <= formData.duration_weeks; i++) {
     const weekNumber = i;
@@ -338,7 +590,7 @@ const createFallbackStudyPlan = (formData: StudyPlanForm): StudyPlanData => {
       `Apply theoretical knowledge to practical problems`
     ];
     
-    // Generate tasks
+    // Generate tasks with appropriate duration based on daily hours
     const tasks: StudyTask[] = [];
     
     // Reading task
@@ -372,7 +624,7 @@ const createFallbackStudyPlan = (formData: StudyPlanForm): StudyPlanData => {
       title: weekTitle,
       topics,
       objectives,
-      estimated_total_hours: formData.daily_hours * 7,
+      estimated_total_hours: hoursPerWeek,
       tasks
     });
   }
@@ -997,7 +1249,22 @@ export const generateAdditionalResources = async (
     
     // Parse the JSON response
     try {
-      const resourcesData = JSON.parse(content);
+      let resourcesData = JSON.parse(content);
+      
+      // Search for real resources using SERPApi
+      const realResources = await searchForResources(subject, topics, difficulty);
+      
+      // Combine real resources with AI-generated ones
+      if (realResources.length > 0) {
+        // Add real resources with proper IDs
+        const resourcesWithIds = realResources.map((resource, index) => ({
+          ...resource,
+          id: `real_resource_${Date.now()}_${index}`
+        }));
+        
+        // Combine existing resources with real ones
+        resourcesData = [...resourcesWithIds, ...resourcesData];
+      }
       
       // Ensure all resources have required fields
       return resourcesData.map((resource: any): StudyResource => {
@@ -1020,7 +1287,22 @@ export const generateAdditionalResources = async (
       const jsonMatch = content.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         try {
-          const resourcesData = JSON.parse(jsonMatch[0]);
+          let resourcesData = JSON.parse(jsonMatch[0]);
+          
+          // Search for real resources using SERPApi
+          const realResources = await searchForResources(subject, topics, difficulty);
+          
+          // Combine real resources with AI-generated ones
+          if (realResources.length > 0) {
+            // Add real resources with proper IDs
+            const resourcesWithIds = realResources.map((resource, index) => ({
+              ...resource,
+              id: `real_resource_${Date.now()}_${index}`
+            }));
+            
+            // Combine existing resources with real ones
+            resourcesData = [...resourcesWithIds, ...resourcesData];
+          }
           
           // Ensure all resources have required fields
           return resourcesData.map((resource: any): StudyResource => {
