@@ -25,11 +25,12 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { getCalendarEvents, getStudySessions, getFlashcards, getSubjectProgress } from '../../services/supabase';
-import { CalendarEvent, StudySession, Flashcard, SubjectProgress } from '../../types';
+import { getCalendarEvents, getStudySessions, getFlashcards, getSubjectProgress, getStudyPlans } from '../../services/supabase';
+import { CalendarEvent, StudySession, Flashcard, SubjectProgress, StudyPlan } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { Button } from '../../components/Button';
 import { CalendarEventComponent } from '../../components/CalendarEvent';
+import { StudyPlanCard } from '../../components/StudyPlanCard';
 import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
@@ -81,6 +82,8 @@ export const HomeScreen = ({ navigation }: any) => {
   const [weeklyProgress, setWeeklyProgress] = useState(0);
   const [studyStreak, setStudyStreak] = useState(0);
   const [subjectProgress, setSubjectProgress] = useState<SubjectProgress[]>([]);
+  const [recentStudyPlans, setRecentStudyPlans] = useState<StudyPlan[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [currentQuote, setCurrentQuote] = useState('');
@@ -124,6 +127,25 @@ export const HomeScreen = ({ navigation }: any) => {
       lastReviewed.getMonth() === today.getMonth() &&
       lastReviewed.getDate() === today.getDate()
     );
+  };
+
+  // Load study plans
+  const loadStudyPlans = async () => {
+    if (!user) return;
+    
+    setLoadingPlans(true);
+    try {
+      const plans = await getStudyPlans(user.id);
+      // Sort by creation date and take the most recent 3
+      const sortedPlans = plans.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ).slice(0, 3);
+      setRecentStudyPlans(sortedPlans);
+    } catch (error) {
+      console.error('Error loading study plans:', error);
+    } finally {
+      setLoadingPlans(false);
+    }
   };
 
   // Load data
@@ -185,6 +207,9 @@ export const HomeScreen = ({ navigation }: any) => {
       // Calculate study streak
       const streak = calculateStudyStreak(sessions);
       setStudyStreak(streak);
+      
+      // Load study plans
+      await loadStudyPlans();
       
       // Animate in
       Animated.parallel([
@@ -327,6 +352,21 @@ export const HomeScreen = ({ navigation }: any) => {
     Alert.alert('Success', 'Weekly goal updated successfully');
   };
 
+  // Handle creating a new study plan
+  const handleCreateStudyPlan = () => {
+    navigation.navigate('StudyPlan');
+  };
+
+  // Handle viewing a study plan
+  const handleViewStudyPlan = (planId: string) => {
+    navigation.navigate('StudyPlanDetail', { planId });
+  };
+
+  // Handle starting a study plan
+  const handleStartStudyPlan = (planId: string) => {
+    navigation.navigate('StudyPlanDetail', { planId, startSession: true });
+  };
+
   // Get progress percentage
   const getProgressPercentage = () => {
     // Include active session time if running
@@ -367,6 +407,47 @@ export const HomeScreen = ({ navigation }: any) => {
     const index = subjectProgress.findIndex(p => p.subject === subject);
     return SUBJECT_COLORS[index % SUBJECT_COLORS.length];
   };
+
+  // Render Study Plans section
+  const renderStudyPlansSection = () => (
+    <Animated.View style={[styles.studyPlansContainer, { opacity: fadeAnim }]}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>🤖 AI Study Plans</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('StudyPlan')}>
+          <Text style={styles.seeAll}>See All</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {loadingPlans ? (
+        <View style={styles.loadingContainer}>
+          <LoadingSpinner message="Loading study plans..." />
+        </View>
+      ) : recentStudyPlans.length > 0 ? (
+        <View>
+          {recentStudyPlans.map((plan) => (
+            <StudyPlanCard
+              key={plan.id}
+              studyPlan={plan}
+              onPress={() => handleViewStudyPlan(plan.id)}
+              onStartPlan={() => handleStartStudyPlan(plan.id)}
+              showStartButton={true}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>🤖</Text>
+          <Text style={styles.emptyText}>No AI study plans yet</Text>
+          <Text style={styles.emptySubtext}>Create your first personalized study plan</Text>
+          <Button
+            title="✨ Create AI Study Plan"
+            onPress={handleCreateStudyPlan}
+            style={styles.emptyButton}
+          />
+        </View>
+      )}
+    </Animated.View>
+  );
 
   // Render subject progress item
   const renderSubjectProgress = ({ item, index }: { item: SubjectProgress; index: number }) => {
@@ -786,6 +867,9 @@ export const HomeScreen = ({ navigation }: any) => {
             />
           </View>
         </Animated.View>
+
+        {/* Study Plans Section */}
+        {renderStudyPlansSection()}
 
         {/* Subject Progress */}
         {subjectProgress.length > 0 && (
@@ -1451,6 +1535,62 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 4,
   },
+  studyPlansContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  seeAll: {
+    fontSize: 14,
+    color: '#6366F1',
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 40,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  emptyButton: {
+    paddingHorizontal: 24,
+  },
   subjectProgressContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1562,32 +1702,6 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: '#F3F4F6',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  seeAll: {
-    fontSize: 14,
-    color: '#6366F1',
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  emptyButton: {
-    paddingHorizontal: 24,
   },
   sessionsContainer: {
     backgroundColor: '#FFFFFF',
