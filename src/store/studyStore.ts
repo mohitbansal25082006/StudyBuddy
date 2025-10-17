@@ -5,7 +5,7 @@
 // ============================================
 
 import { create } from 'zustand';
-import { persist, createJSONStorage, PersistOptions } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   StudyPlan, 
@@ -80,34 +80,10 @@ interface StudyState {
   setAIReminder: (eventId: string, reminder: string) => void;
   addAIGeneratedEvents: (events: CalendarEvent[]) => Promise<void>;
   refreshCalendarEvents: (userId: string) => Promise<void>;
+  getAIReminder: (eventId: string) => string | null;
+  removeAIReminder: (eventId: string) => void;
+  generateAIReminderForEvent: (eventId: string, eventTitle: string, eventSubject: string, progress?: number, streak?: number, studyTime?: number, reminderType?: string) => Promise<string>;
 }
-
-type StudyStorePersist = Omit<StudyState, 'fetchStudyPlans' | 'setCurrentStudyPlan' | 'fetchFlashcards' | 'fetchDueFlashcards' | 'fetchFlashcardStats' | 'fetchStudySessions' | 'fetchCalendarEvents' | 'fetchSubjectProgress' | 'addStudySession' | 'updateFlashcard' | 'clearStudyData' | 'setAIGeneratedSchedule' | 'setAIConvertedSchedule' | 'setAIWeeklySummary' | 'setAIReminder' | 'addAIGeneratedEvents' | 'refreshCalendarEvents'>;
-
-const persistOptions: PersistOptions<StudyState, StudyStorePersist> = {
-  name: 'study-storage',
-  storage: createJSONStorage(() => AsyncStorage),
-  partialize: (state: StudyState): StudyStorePersist => ({
-    studyPlans: state.studyPlans,
-    currentStudyPlan: state.currentStudyPlan,
-    studyPlansLoading: state.studyPlansLoading,
-    flashcards: state.flashcards,
-    dueFlashcards: state.dueFlashcards,
-    flashcardsLoading: state.flashcardsLoading,
-    flashcardStats: state.flashcardStats,
-    studySessions: state.studySessions,
-    studySessionsLoading: state.studySessionsLoading,
-    calendarEvents: state.calendarEvents,
-    calendarEventsLoading: state.calendarEventsLoading,
-    subjectProgress: state.subjectProgress,
-    progressLoading: state.progressLoading,
-    aiGeneratedSchedule: state.aiGeneratedSchedule,
-    aiConvertedSchedule: state.aiConvertedSchedule,
-    aiWeeklySummary: state.aiWeeklySummary,
-    aiFeaturesLoading: state.aiFeaturesLoading,
-    aiReminders: state.aiReminders,
-  }),
-};
 
 export const useStudyStore = create<StudyState>()(
   persist(
@@ -198,8 +174,24 @@ export const useStudyStore = create<StudyState>()(
         set({ calendarEventsLoading: true });
         try {
           const events = await getCalendarEvents(userId, startDate, endDate);
-          console.log('Fetched calendar events:', events);
-          set({ calendarEvents: events, calendarEventsLoading: false });
+          
+          // Get AI reminders for each event
+          const eventsWithReminders = await Promise.all(
+            events.map(async (event) => {
+              // Get AI reminder from store if it exists
+              const { aiReminders } = get();
+              const reminder = aiReminders[event.id];
+              
+              if (reminder) {
+                return { ...event, ai_reminder: reminder };
+              }
+              
+              return event;
+            })
+          );
+          
+          console.log('Fetched calendar events with reminders:', eventsWithReminders);
+          set({ calendarEvents: eventsWithReminders, calendarEventsLoading: false });
         } catch (error) {
           console.error('Error fetching calendar events:', error);
           set({ calendarEventsLoading: false });
@@ -302,7 +294,71 @@ export const useStudyStore = create<StudyState>()(
           throw error;
         }
       },
+      
+      // New AI Reminder Actions
+      getAIReminder: (eventId: string) => {
+        const { aiReminders } = get();
+        return aiReminders[eventId] || null;
+      },
+      
+      removeAIReminder: (eventId: string) => {
+        const { aiReminders } = get();
+        const newReminders = { ...aiReminders };
+        delete newReminders[eventId];
+        set({ aiReminders: newReminders });
+      },
+      
+      generateAIReminderForEvent: async (eventId: string, eventTitle: string, eventSubject: string, progress = 50, streak = 1, studyTime = 30, reminderType = 'contextual') => {
+        try {
+          // Import the generateReminderText function dynamically to avoid circular dependencies
+          const { generateReminderText } = await import('../services/calendar/calendarAI');
+          
+          const reminderRequest = {
+            userName: 'Student', // This would come from user profile
+            subject: eventSubject,
+            topic: eventTitle,
+            progress,
+            streak,
+            studyTime,
+            reminderType: reminderType as any
+          };
+          
+          const reminder = await generateReminderText(reminderRequest);
+          
+          // Store the reminder using get() to access the current state's method
+          const { setAIReminder } = get();
+          setAIReminder(eventId, reminder);
+          
+          return reminder;
+        } catch (error) {
+          console.error('Error generating AI reminder:', error);
+          throw error;
+        }
+      },
     }),
-    persistOptions
+    {
+      name: 'study-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        studyPlans: state.studyPlans,
+        currentStudyPlan: state.currentStudyPlan,
+        studyPlansLoading: state.studyPlansLoading,
+        flashcards: state.flashcards,
+        dueFlashcards: state.dueFlashcards,
+        flashcardsLoading: state.flashcardsLoading,
+        flashcardStats: state.flashcardStats,
+        studySessions: state.studySessions,
+        studySessionsLoading: state.studySessionsLoading,
+        calendarEvents: state.calendarEvents,
+        calendarEventsLoading: state.calendarEventsLoading,
+        subjectProgress: state.subjectProgress,
+        progressLoading: state.progressLoading,
+        aiGeneratedSchedule: state.aiGeneratedSchedule,
+        aiConvertedSchedule: state.aiConvertedSchedule,
+        aiWeeklySummary: state.aiWeeklySummary,
+        aiFeaturesLoading: state.aiFeaturesLoading,
+        aiReminders: state.aiReminders,
+      }),
+    }
   )
 );

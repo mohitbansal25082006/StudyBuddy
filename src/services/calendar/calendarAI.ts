@@ -10,6 +10,7 @@ import { CalendarEvent, Profile } from '../../types';
 // Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
+  timeout: 120000, // 2 minutes timeout
 });
 
 // Valid event types based on database constraint
@@ -101,14 +102,19 @@ export const generateStudySchedule = async (request: ScheduleRequest): Promise<G
     }
     `;
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are a helpful assistant that generates study schedules for students. Always respond with valid JSON format." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7,
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that generates study schedules for students. Always respond with valid JSON format." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+      },
+      {
+        timeout: 120000, // 2 minutes timeout
+      }
+    );
     
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
@@ -279,15 +285,20 @@ export const generateReminderText = async (request: ReminderRequest): Promise<st
         break;
     }
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are a helpful assistant that generates study reminders for students." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.8,
-      max_tokens: 100
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that generates study reminders for students." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.8,
+        max_tokens: 100,
+      },
+      {
+        timeout: 120000, // 2 minutes timeout
+      }
+    );
     
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
@@ -399,14 +410,19 @@ export const convertGoalToSchedule = async (request: GoalRequest): Promise<Conve
     }
     `;
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are a helpful assistant that converts study goals into schedules. Always respond with valid JSON format." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7,
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that converts study goals into schedules. Always respond with valid JSON format." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+      },
+      {
+        timeout: 120000, // 2 minutes timeout
+      }
+    );
     
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {
@@ -607,14 +623,19 @@ export const generateWeeklySummary = async (request: WeeklySummaryRequest): Prom
     - Keep the language simple and clear
     `;
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are a helpful assistant that generates weekly study summaries for students. Always respond with valid JSON format." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7,
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that generates weekly study summaries for students. Always respond with valid JSON format." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.7,
+      },
+      {
+        timeout: 120000, // 2 minutes timeout
+      }
+    );
     
     const responseContent = completion.choices[0].message.content;
     if (!responseContent) {

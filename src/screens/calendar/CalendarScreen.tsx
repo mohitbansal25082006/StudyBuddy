@@ -23,6 +23,7 @@ import { CalendarEventComponent } from '../../components/CalendarEvent';
 import { AIScheduleGenerator } from '../../components/calendar/AIScheduleGenerator';
 import { AIGoalConverter } from '../../components/calendar/AIGoalConverter';
 import { AIWeeklySummary as AIWeeklySummaryComponent } from '../../components/calendar/AIWeeklySummary';
+import { AIReminderGenerator } from '../../components/calendar/AIReminderGenerator';
 
 const { width, height } = Dimensions.get('window');
 
@@ -32,7 +33,7 @@ type ValidEventType = typeof VALID_EVENT_TYPES[number];
 
 export const CalendarScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
-  const { calendarEvents, fetchCalendarEvents, refreshCalendarEvents } = useStudyStore();
+  const { calendarEvents, fetchCalendarEvents, refreshCalendarEvents, setAIReminder } = useStudyStore();
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,6 +48,8 @@ export const CalendarScreen = ({ navigation }: any) => {
   const [showWeeklySummary, setShowWeeklySummary] = useState(false);
   const [weeklySummary, setWeeklySummary] = useState<AIWeeklySummary | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [showAIReminder, setShowAIReminder] = useState(false);
+  const [selectedEventForReminder, setSelectedEventForReminder] = useState<CalendarEvent | null>(null);
   
   // Refresh calendar when screen comes into focus
   useFocusEffect(
@@ -213,6 +216,23 @@ export const CalendarScreen = ({ navigation }: any) => {
     navigation.navigate('AddEvent', { date: selectedDate.toISOString() });
   };
 
+  // Handle event long press for reminder options
+  const handleEventLongPress = (event: CalendarEvent) => {
+    setSelectedEventForReminder(event);
+    setShowAIReminder(true);
+  };
+
+  // Handle AI reminder button press
+  const handleAIReminderPress = () => {
+    if (eventsForSelectedDate.length > 0) {
+      // Use the first event for the selected date
+      setSelectedEventForReminder(eventsForSelectedDate[0]);
+      setShowAIReminder(true);
+    } else {
+      Alert.alert('No Events', 'Please select a date with events to generate a reminder');
+    }
+  };
+
   // Validate and fix event type
   const validateEventType = (eventType: string): ValidEventType => {
     if (VALID_EVENT_TYPES.includes(eventType as ValidEventType)) {
@@ -247,8 +267,8 @@ export const CalendarScreen = ({ navigation }: any) => {
           // Validate and fix event type
           const validEventType = validateEventType(event.event_type || 'study_session');
 
-          // Create the calendar event
-          const createdEvent = await createCalendarEvent({
+          // Create the calendar event with proper error handling
+          const eventData = {
             user_id: user.id,
             title: event.title,
             description: event.description || '',
@@ -256,12 +276,29 @@ export const CalendarScreen = ({ navigation }: any) => {
             end_time: event.end_time,
             subject: event.subject,
             event_type: validEventType,
-          });
+          };
+          
+          console.log('Creating event with data:', eventData);
+          
+          const createdEvent = await createCalendarEvent(eventData);
           
           createdEvents.push(createdEvent);
           console.log('Created event:', createdEvent);
-        } catch (eventError) {
+        } catch (eventError: any) {
           console.error('Error creating individual event:', eventError);
+          console.error('Event data that failed:', event);
+          
+          // Try to extract more error details
+          if (eventError.message) {
+            console.error('Error message:', eventError.message);
+          }
+          
+          if (eventError.details) {
+            console.error('Error details:', eventError.details);
+          }
+          
+          // Continue with other events instead of failing completely
+          continue;
         }
       }
       
@@ -305,8 +342,8 @@ export const CalendarScreen = ({ navigation }: any) => {
           // Validate and fix event type
           const validEventType = validateEventType(event.event_type || 'study_session');
 
-          // Create the calendar event
-          const createdEvent = await createCalendarEvent({
+          // Create the calendar event with proper error handling
+          const eventData = {
             user_id: user.id,
             title: event.title,
             description: event.description || '',
@@ -314,12 +351,29 @@ export const CalendarScreen = ({ navigation }: any) => {
             end_time: event.end_time,
             subject: event.subject,
             event_type: validEventType,
-          });
+          };
+          
+          console.log('Creating goal event with data:', eventData);
+          
+          const createdEvent = await createCalendarEvent(eventData);
           
           createdEvents.push(createdEvent);
           console.log('Created event from goal:', createdEvent);
-        } catch (eventError) {
+        } catch (eventError: any) {
           console.error('Error creating individual event from goal:', eventError);
+          console.error('Event data that failed:', event);
+          
+          // Try to extract more error details
+          if (eventError.message) {
+            console.error('Error message:', eventError.message);
+          }
+          
+          if (eventError.details) {
+            console.error('Error details:', eventError.details);
+          }
+          
+          // Continue with other events instead of failing completely
+          continue;
         }
       }
       
@@ -406,6 +460,16 @@ export const CalendarScreen = ({ navigation }: any) => {
     } finally {
       setLoadingSummary(false);
     }
+  };
+
+  // Handle AI reminder generation
+  const handleReminderGenerated = (eventId: string, reminder: string) => {
+    // Store the reminder in the store
+    setAIReminder(eventId, reminder);
+    
+    // Update the event with the reminder
+    // This would typically update the database, but for now we'll just store it in the state
+    Alert.alert('Success', 'Reminder generated and saved!');
   };
 
   // Format month name
@@ -500,6 +564,17 @@ export const CalendarScreen = ({ navigation }: any) => {
             </View>
             <Text style={styles.aiFeatureText}>Weekly Summary</Text>
           </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.aiFeatureButton}
+            onPress={handleAIReminderPress}
+            activeOpacity={0.8}
+          >
+            <View style={styles.aiFeatureIcon}>
+              <Text style={styles.aiFeatureIconText}>💬</Text>
+            </View>
+            <Text style={styles.aiFeatureText}>AI Reminder</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Beautiful Calendar */}
@@ -566,13 +641,23 @@ export const CalendarScreen = ({ navigation }: any) => {
                   })}
                 </Text>
               </View>
-              <TouchableOpacity 
-                onPress={handleAddEvent}
-                style={styles.addButton}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.addButtonText}>+</Text>
-              </TouchableOpacity>
+              <View style={styles.eventActions}>
+                <TouchableOpacity 
+                  onPress={handleAddEvent}
+                  style={styles.addButton}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addButtonText}>+</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={handleAIReminderPress}
+                  style={styles.reminderButton}
+                  activeOpacity={0.8}
+                  disabled={eventsForSelectedDate.length === 0}
+                >
+                  <Text style={styles.reminderButtonText}>💬</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             
             <View style={styles.eventsList}>
@@ -582,6 +667,7 @@ export const CalendarScreen = ({ navigation }: any) => {
                     <CalendarEventComponent
                       event={event}
                       onPress={() => handleEventPress(event)}
+                      onLongPress={() => handleEventLongPress(event)}
                     />
                   </View>
                 ))
@@ -637,6 +723,21 @@ export const CalendarScreen = ({ navigation }: any) => {
         onClose={() => setShowWeeklySummary(false)}
         summary={weeklySummary}
       />
+      
+      {/* AI Reminder Generator Modal */}
+      {selectedEventForReminder && (
+        <AIReminderGenerator
+          visible={showAIReminder}
+          onClose={() => {
+            setShowAIReminder(false);
+            setSelectedEventForReminder(null);
+          }}
+          eventId={selectedEventForReminder.id}
+          eventTitle={selectedEventForReminder.title}
+          eventSubject={selectedEventForReminder.subject}
+          onReminderGenerated={handleReminderGenerated}
+        />
+      )}
       
       {loadingSummary && <LoadingSpinner message="Generating weekly summary..." />}
     </View>
@@ -713,7 +814,7 @@ const styles = StyleSheet.create({
   aiFeaturesContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -723,25 +824,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
     backgroundColor: '#F1F5F9',
-    minWidth: width * 0.25,
+    minWidth: width * 0.18,
   },
   aiFeatureIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#6366F1',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
   },
   aiFeatureIconText: {
-    fontSize: 18,
+    fontSize: 16,
   },
   aiFeatureText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#475569',
     textAlign: 'center',
@@ -882,10 +983,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
+  eventActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   addButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#6366F1',
     justifyContent: 'center',
     alignItems: 'center',
@@ -896,10 +1002,28 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   addButtonText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '300',
     color: '#FFFFFF',
-    lineHeight: 28,
+    lineHeight: 24,
+  },
+  reminderButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  reminderButtonText: {
+    fontSize: 20,
+    fontWeight: '300',
+    color: '#FFFFFF',
   },
   eventsList: {
     minHeight: 200, // Minimum height for events list

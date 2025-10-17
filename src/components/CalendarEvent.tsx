@@ -1,7 +1,7 @@
 // F:\StudyBuddy\src\components/CalendarEvent.tsx
 // ============================================
 // CALENDAR EVENT COMPONENT
-// Beautiful display of calendar event
+// Beautiful display of calendar event with long press support
 // ============================================
 
 import React from 'react';
@@ -11,9 +11,14 @@ import { CalendarEvent } from '../types';
 interface CalendarEventProps {
   event: CalendarEvent;
   onPress: () => void;
+  onLongPress?: () => void;
 }
 
-export const CalendarEventComponent: React.FC<CalendarEventProps> = ({ event, onPress }) => {
+export const CalendarEventComponent: React.FC<CalendarEventProps> = ({ 
+  event, 
+  onPress, 
+  onLongPress 
+}) => {
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString('en-US', { 
@@ -37,7 +42,12 @@ export const CalendarEventComponent: React.FC<CalendarEventProps> = ({ event, on
   };
 
   return (
-    <TouchableOpacity onPress={onPress} style={styles.container} activeOpacity={0.8}>
+    <TouchableOpacity 
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={styles.container} 
+      activeOpacity={0.8}
+    >
       <View style={[styles.leftBorder, { backgroundColor: getEventTypeColor(event.event_type) }]} />
       <View style={styles.content}>
         <View style={styles.header}>
@@ -65,6 +75,18 @@ export const CalendarEventComponent: React.FC<CalendarEventProps> = ({ event, on
           <Text style={styles.eventDescription} numberOfLines={2}>
             {event.description}
           </Text>
+        )}
+        
+        {/* AI Reminder Indicator */}
+        {event.ai_reminder && (
+          <View style={styles.aiReminderContainer}>
+            <View style={styles.aiReminderIcon}>
+              <Text style={styles.aiReminderIconText}>🤖</Text>
+            </View>
+            <Text style={styles.aiReminderText} numberOfLines={1}>
+              {event.ai_reminder}
+            </Text>
+          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -156,5 +178,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748B',
     lineHeight: 18,
+  },
+  aiReminderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+  },
+  aiReminderIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  aiReminderIconText: {
+    fontSize: 10,
+  },
+  aiReminderText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#047857',
+    fontStyle: 'italic',
   },
 });

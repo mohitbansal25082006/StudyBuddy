@@ -178,6 +178,7 @@ export interface CalendarEvent {
   event_type: 'study_session' | 'review' | 'exam';
   google_calendar_id: string | null;
   created_at: string;
+  ai_reminder?: string; // AI-generated reminder text
 }
 
 // Progress tracking types
