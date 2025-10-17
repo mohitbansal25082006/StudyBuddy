@@ -9,6 +9,28 @@ import { StudyPlanForm, StudyPlanData, StudyWeek, StudyResource, StudyTask } fro
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 const SERPAPI_API_KEY = process.env.EXPO_PUBLIC_SERPAPI_API_KEY;
 
+// Configuration for API requests - INCREASED TIMEOUTS
+const API_TIMEOUT = 90000; // 90 seconds timeout
+const PLAN_GENERATION_TIMEOUT = 180000; // 3 minutes timeout specifically for plan generation
+const MAX_RETRIES = 1; // Reduced retries to avoid long waits
+
+// Helper function for fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit, timeout: number): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 // Function to search for real resources using SERPApi
 const searchForResources = async (subject: string, topics: string[], difficulty: string, learningStyle: string): Promise<any[]> => {
   if (!SERPAPI_API_KEY) {
@@ -28,7 +50,9 @@ const searchForResources = async (subject: string, topics: string[], difficulty:
     const resources = [];
     
     for (const query of searchQueries.slice(0, 3)) { // Limit to 3 queries to avoid rate limits
-      const response = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${SERPAPI_API_KEY}`);
+      const response = await fetchWithTimeout(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${SERPAPI_API_KEY}`, {
+        method: 'GET',
+      }, API_TIMEOUT);
       
       if (!response.ok) {
         console.error(`SERPApi error for query "${query}":`, response.status);
@@ -206,7 +230,7 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -227,7 +251,7 @@ export const generateStudyPlan = async (formData: StudyPlanForm): Promise<StudyP
         max_tokens: 4000, // Increased to handle longer responses
         temperature: 0.7,
       }),
-    });
+    }, PLAN_GENERATION_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -915,7 +939,7 @@ export const generateFlashcardContent = async (
   try {
     console.log('Generating flashcards with OpenAI...');
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -936,7 +960,7 @@ export const generateFlashcardContent = async (
         max_tokens: 2000,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     console.log('OpenAI response status:', response.status);
 
@@ -1033,7 +1057,7 @@ export const generateFlashcardHint = async (question: string, answer: string): P
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1054,7 +1078,7 @@ export const generateFlashcardHint = async (question: string, answer: string): P
         max_tokens: 100,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1090,7 +1114,7 @@ export const generateFlashcardExplanation = async (question: string, answer: str
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1111,7 +1135,7 @@ export const generateFlashcardExplanation = async (question: string, answer: str
         max_tokens: 300,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1164,7 +1188,7 @@ export const categorizeFlashcardsWithAI = async (flashcards: any[]): Promise<any
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1185,7 +1209,7 @@ export const categorizeFlashcardsWithAI = async (flashcards: any[]): Promise<any
         max_tokens: 2000,
         temperature: 0.3,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1270,7 +1294,7 @@ export const optimizeStudySchedule = async (flashcards: any[], learningStyle: st
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1291,7 +1315,7 @@ export const optimizeStudySchedule = async (flashcards: any[], learningStyle: st
         max_tokens: 2000,
         temperature: 0.3,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1391,7 +1415,7 @@ export const generateAdditionalResources = async (
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1412,7 +1436,7 @@ export const generateAdditionalResources = async (
         max_tokens: 2500,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1615,7 +1639,7 @@ export const generateAdditionalTasks = async (
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1636,7 +1660,7 @@ export const generateAdditionalTasks = async (
         max_tokens: 2500,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1812,7 +1836,7 @@ export const generateStudyTips = async (
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1833,7 +1857,7 @@ export const generateStudyTips = async (
         max_tokens: 1000,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -1984,7 +2008,7 @@ export const verifyAndRateResources = async (
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2005,7 +2029,7 @@ export const verifyAndRateResources = async (
         max_tokens: 2000,
         temperature: 0.3,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -2153,7 +2177,7 @@ export const generatePersonalizedSchedule = async (
   `;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2174,7 +2198,7 @@ export const generatePersonalizedSchedule = async (
         max_tokens: 2500,
         temperature: 0.7,
       }),
-    });
+    }, API_TIMEOUT);
 
     if (!response.ok) {
       const errorData = await response.json();
