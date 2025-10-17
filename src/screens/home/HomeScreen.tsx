@@ -22,6 +22,7 @@ import {
   Image,
   TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -58,6 +59,9 @@ const SUBJECT_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', 
   '#10B981', '#14B8A6', '#F97316', '#EF4444'
 ];
+
+// AsyncStorage keys
+const WEEKLY_GOAL_KEY = 'studyBuddy_weeklyGoal';
 
 export const HomeScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
@@ -101,6 +105,27 @@ export const HomeScreen = ({ navigation }: any) => {
   
   // Set up timer for real-time updates
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Load weekly goal from AsyncStorage
+  const loadWeeklyGoal = async () => {
+    try {
+      const savedGoal = await AsyncStorage.getItem(WEEKLY_GOAL_KEY);
+      if (savedGoal) {
+        setWeeklyGoal(parseInt(savedGoal));
+      }
+    } catch (error) {
+      console.error('Error loading weekly goal:', error);
+    }
+  };
+  
+  // Save weekly goal to AsyncStorage
+  const saveWeeklyGoal = async (goal: number) => {
+    try {
+      await AsyncStorage.setItem(WEEKLY_GOAL_KEY, goal.toString());
+    } catch (error) {
+      console.error('Error saving weekly goal:', error);
+    }
+  };
   
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -153,6 +178,9 @@ export const HomeScreen = ({ navigation }: any) => {
     if (!user) return;
     
     try {
+      // Load weekly goal from storage
+      await loadWeeklyGoal();
+      
       // Get today's date in YYYY-MM-DD format
       const today = new Date();
       const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
@@ -345,6 +373,7 @@ export const HomeScreen = ({ navigation }: any) => {
     }
     
     setWeeklyGoal(goalMinutes);
+    saveWeeklyGoal(goalMinutes); // Save to AsyncStorage
     setShowGoalModal(false);
     setNewGoal('');
     
