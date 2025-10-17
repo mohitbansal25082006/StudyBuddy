@@ -23,6 +23,7 @@ import {
   TextInput,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../store/authStore';
 import { useStudyStore } from '../../store/studyStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -32,6 +33,7 @@ import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { Button } from '../../components/Button';
 import { CalendarEventComponent } from '../../components/CalendarEvent';
 import { StudyPlanCard } from '../../components/StudyPlanCard';
+import { AIReminderGenerator } from '../../components/calendar/AIReminderGenerator';
 import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
@@ -62,10 +64,21 @@ const SUBJECT_COLORS = [
 
 // AsyncStorage keys
 const WEEKLY_GOAL_KEY = 'studyBuddy_weeklyGoal';
+const TODAY_REMINDER_KEY = 'studyBuddy_todayReminder';
+const REMINDER_DATE_KEY = 'studyBuddy_reminderDate';
+const DISMISSED_REMINDER_KEY = 'studyBuddy_dismissedReminder';
 
 export const HomeScreen = ({ navigation }: any) => {
   const { user, profile } = useAuthStore();
-  const { studySessions, calendarEvents, addStudySession } = useStudyStore();
+  const { 
+    studySessions, 
+    calendarEvents, 
+    addStudySession, 
+    getAIReminder, 
+    generateAIReminderForEvent,
+    setAIReminder,
+    aiReminders
+  } = useStudyStore();
   const { 
     activeSession, 
     todaySessions, 
@@ -99,12 +112,60 @@ export const HomeScreen = ({ navigation }: any) => {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   
+  // AI Reminder state
+  const [todayReminder, setTodayReminder] = useState<string | null>(null);
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderEvent, setReminderEvent] = useState<CalendarEvent | null>(null);
+  const [showReminderOptions, setShowReminderOptions] = useState(false);
+  const [showReminderGenerator, setShowReminderGenerator] = useState(false);
+  const [selectedEventForReminder, setSelectedEventForReminder] = useState<CalendarEvent | null>(null);
+  const [dismissedForToday, setDismissedForToday] = useState(false);
+  
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
   
   // Set up timer for real-time updates
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Listen for changes in AI reminders from the store
+  useEffect(() => {
+    // Check if any of today's events have reminders
+    if (todayEvents.length > 0) {
+      const today = new Date().toDateString();
+      
+      // Check if we have a reminder for today in AsyncStorage
+      AsyncStorage.getItem(REMINDER_DATE_KEY).then(savedReminderDate => {
+        if (savedReminderDate === today) {
+          AsyncStorage.getItem(TODAY_REMINDER_KEY).then(savedReminder => {
+            if (savedReminder) {
+              setTodayReminder(savedReminder);
+            }
+          });
+        }
+      });
+      
+      // Check if we have dismissed the reminder for today
+      AsyncStorage.getItem(DISMISSED_REMINDER_KEY).then(dismissedDate => {
+        if (dismissedDate === today) {
+          setDismissedForToday(true);
+        } else {
+          setDismissedForToday(false);
+        }
+      });
+      
+      // Check if any of today's events have reminders in the store
+      const eventWithReminder = todayEvents.find(event => aiReminders[event.id]);
+      if (eventWithReminder && aiReminders[eventWithReminder.id]) {
+        setTodayReminder(aiReminders[eventWithReminder.id]);
+        setReminderEvent(eventWithReminder);
+        
+        // Save to AsyncStorage for persistence
+        AsyncStorage.setItem(TODAY_REMINDER_KEY, aiReminders[eventWithReminder.id]);
+        AsyncStorage.setItem(REMINDER_DATE_KEY, today);
+      }
+    }
+  }, [aiReminders, todayEvents]);
   
   // Load weekly goal from AsyncStorage
   const loadWeeklyGoal = async () => {
@@ -125,6 +186,163 @@ export const HomeScreen = ({ navigation }: any) => {
     } catch (error) {
       console.error('Error saving weekly goal:', error);
     }
+  };
+  
+  // Load today's reminder from AsyncStorage
+  const loadTodayReminder = async () => {
+    try {
+      const savedReminderDate = await AsyncStorage.getItem(REMINDER_DATE_KEY);
+      const today = new Date().toDateString();
+      
+      // Check if we have a reminder for today
+      if (savedReminderDate === today) {
+        const savedReminder = await AsyncStorage.getItem(TODAY_REMINDER_KEY);
+        if (savedReminder) {
+          setTodayReminder(savedReminder);
+          return;
+        }
+      }
+      
+      // Check if we have dismissed the reminder for today
+      const dismissedDate = await AsyncStorage.getItem(DISMISSED_REMINDER_KEY);
+      if (dismissedDate === today) {
+        setDismissedForToday(true);
+        return;
+      } else {
+        setDismissedForToday(false);
+      }
+      
+      // If no reminder for today, try to get one from today's events
+      await generateTodayReminder();
+    } catch (error) {
+      console.error('Error loading today reminder:', error);
+    }
+  };
+  
+  // Generate a reminder for today
+  const generateTodayReminder = async () => {
+    if (!user || todayEvents.length === 0) return;
+    
+    setReminderLoading(true);
+    try {
+      // Get the first event for today that doesn't have a reminder yet
+      const eventWithoutReminder = todayEvents.find(event => !getAIReminder(event.id));
+      
+      if (eventWithoutReminder) {
+        // Generate a new reminder for this event
+        const reminder = await generateAIReminderForEvent(
+          eventWithoutReminder.id,
+          eventWithoutReminder.title,
+          eventWithoutReminder.subject
+        );
+        
+        // Save the reminder for today
+        const today = new Date().toDateString();
+        await AsyncStorage.setItem(TODAY_REMINDER_KEY, reminder);
+        await AsyncStorage.setItem(REMINDER_DATE_KEY, today);
+        
+        setTodayReminder(reminder);
+        setReminderEvent(eventWithoutReminder);
+      } else if (todayEvents.length > 0) {
+        // Use an existing reminder from today's events
+        const eventWithReminder = todayEvents.find(event => getAIReminder(event.id));
+        if (eventWithReminder) {
+          const reminder = getAIReminder(eventWithReminder.id);
+          if (reminder) {
+            // Save the reminder for today
+            const today = new Date().toDateString();
+            await AsyncStorage.setItem(TODAY_REMINDER_KEY, reminder);
+            await AsyncStorage.setItem(REMINDER_DATE_KEY, today);
+            
+            setTodayReminder(reminder);
+            setReminderEvent(eventWithReminder);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error generating today reminder:', error);
+    } finally {
+      setReminderLoading(false);
+    }
+  };
+  
+  // Update today's reminder
+  const updateTodayReminder = async (newReminder: string) => {
+    try {
+      // Update the reminder in the store
+      if (reminderEvent) {
+        setAIReminder(reminderEvent.id, newReminder);
+      }
+      
+      // Update the reminder in AsyncStorage
+      const today = new Date().toDateString();
+      await AsyncStorage.setItem(TODAY_REMINDER_KEY, newReminder);
+      await AsyncStorage.setItem(REMINDER_DATE_KEY, today);
+      
+      // Update the local state
+      setTodayReminder(newReminder);
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Error updating today reminder:', error);
+    }
+  };
+  
+  // Regenerate today's reminder
+  const regenerateTodayReminder = async () => {
+    if (!user || todayEvents.length === 0) return;
+    
+    // Select a random event from today's events
+    const randomEvent = todayEvents[Math.floor(Math.random() * todayEvents.length)];
+    setSelectedEventForReminder(randomEvent);
+    setShowReminderGenerator(true);
+    setShowReminderOptions(false);
+  };
+  
+  // Handle reminder generated from the AI Reminder Generator
+  const handleReminderGenerated = (eventId: string, reminder: string) => {
+    // Update the reminder in the store
+    setAIReminder(eventId, reminder);
+    
+    // Update the reminder in AsyncStorage
+    const today = new Date().toDateString();
+    AsyncStorage.setItem(TODAY_REMINDER_KEY, reminder);
+    AsyncStorage.setItem(REMINDER_DATE_KEY, today);
+    
+    // Update the local state
+    setTodayReminder(reminder);
+    
+    // Find the event with the given ID
+    const event = todayEvents.find(e => e.id === eventId);
+    if (event) {
+      setReminderEvent(event);
+    }
+    
+    // Reset dismissed state
+    setDismissedForToday(false);
+    AsyncStorage.removeItem(DISMISSED_REMINDER_KEY);
+    
+    // Close the reminder generator
+    setShowReminderGenerator(false);
+    
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+  
+  // Handle dismissing the reminder for today
+  const handleDismissForToday = () => {
+    const today = new Date().toDateString();
+    AsyncStorage.setItem(DISMISSED_REMINDER_KEY, today);
+    setDismissedForToday(true);
+    setShowReminderOptions(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+  
+  // Handle temporarily dismissing the reminder (will reappear on refresh)
+  const handleTemporarilyDismiss = () => {
+    setTodayReminder(null);
+    setReminderEvent(null);
+    setShowReminderOptions(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
   
   useEffect(() => {
@@ -239,6 +457,9 @@ export const HomeScreen = ({ navigation }: any) => {
       // Load study plans
       await loadStudyPlans();
       
+      // Load today's reminder
+      await loadTodayReminder();
+      
       // Animate in
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -314,6 +535,8 @@ export const HomeScreen = ({ navigation }: any) => {
 
   const onRefresh = () => {
     setRefreshing(true);
+    // Reset dismissed state on refresh
+    setDismissedForToday(false);
     loadData();
   };
 
@@ -396,6 +619,13 @@ export const HomeScreen = ({ navigation }: any) => {
     navigation.navigate('StudyPlanDetail', { planId, startSession: true });
   };
 
+  // Handle viewing the event associated with the reminder
+  const handleViewReminderEvent = () => {
+    if (reminderEvent) {
+      navigation.navigate('EditEvent', { eventId: reminderEvent.id });
+    }
+  };
+
   // Get progress percentage
   const getProgressPercentage = () => {
     // Include active session time if running
@@ -435,6 +665,66 @@ export const HomeScreen = ({ navigation }: any) => {
   const getSubjectColor = (subject: string) => {
     const index = subjectProgress.findIndex(p => p.subject === subject);
     return SUBJECT_COLORS[index % SUBJECT_COLORS.length];
+  };
+
+  // Render AI Reminder Component
+  const renderAIReminder = () => {
+    if (!todayReminder || dismissedForToday) return null;
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.aiReminderWrapper,
+          { 
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <LinearGradient
+          colors={['#667eea', '#764ba2', '#f093fb']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.aiReminderGradient}
+        >
+          <View style={styles.reminderHeader}>
+            <View style={styles.reminderTitleContainer}>
+              <Text style={styles.reminderIcon}>✨</Text>
+              <Text style={styles.reminderTitle}>Today's AI Reminder</Text>
+            </View>
+            <View style={styles.reminderActions}>
+              <TouchableOpacity 
+                onPress={() => setShowReminderOptions(true)} 
+                style={styles.reminderOptionButton}
+              >
+                <Text style={styles.reminderOptionButtonText}>⋯</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleTemporarilyDismiss} style={styles.dismissButton}>
+                <Text style={styles.dismissButtonText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <View style={styles.reminderContent}>
+            <Text style={styles.reminderText}>{todayReminder}</Text>
+            
+            {reminderEvent && (
+              <TouchableOpacity 
+                style={styles.reminderEventButton}
+                onPress={handleViewReminderEvent}
+              >
+                <Text style={styles.reminderEventButtonText}>View Related Event</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          <View style={styles.reminderFooter}>
+            <View style={styles.reminderDot} />
+            <Text style={styles.reminderFooterText}>Generated by AI for you today</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    );
   };
 
   // Render Study Plans section
@@ -739,6 +1029,15 @@ export const HomeScreen = ({ navigation }: any) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* AI Reminder */}
+        {reminderLoading ? (
+          <View style={[styles.aiReminderWrapper, styles.reminderLoading]}>
+            <LoadingSpinner message="Generating your AI reminder..." />
+          </View>
+        ) : (
+          renderAIReminder()
+        )}
+
         {/* Active Session Banner */}
         {activeSession && activeSession.isRunning && (
           <Animated.View 
@@ -882,18 +1181,78 @@ export const HomeScreen = ({ navigation }: any) => {
         {/* Quick Actions */}
         <Animated.View style={[styles.actionsContainer, { opacity: fadeAnim }]}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionButtons}>
-            <Button
-              title={activeSession && activeSession.isRunning ? "View Session" : "Start Study Session"}
+          
+          {/* First Row - Primary Actions */}
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity
+              style={styles.primaryActionButton}
               onPress={() => navigation.navigate('Subjects')}
-              style={styles.actionButton}
-            />
-            <Button
-              title="Review Flashcards"
+            >
+              <LinearGradient
+                colors={['#6366F1', '#8B5CF6']}
+                style={styles.primaryActionButtonGradient}
+              >
+                <Text style={styles.primaryActionButtonIcon}>📖</Text>
+                <Text style={styles.primaryActionButtonText}>
+                  {activeSession && activeSession.isRunning ? "View Session" : "Start Study Session"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.primaryActionButton}
               onPress={() => navigation.navigate('Flashcards')}
-              variant="secondary"
-              style={styles.actionButton}
-            />
+            >
+              <LinearGradient
+                colors={['#10B981', '#14B8A6']}
+                style={styles.primaryActionButtonGradient}
+              >
+                <Text style={styles.primaryActionButtonIcon}>🗂️</Text>
+                <Text style={styles.primaryActionButtonText}>Review Flashcards</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Second Row - Navigation Actions */}
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity
+              style={styles.secondaryActionButton}
+              onPress={() => navigation.navigate('StudyPlan')}
+            >
+              <LinearGradient
+                colors={['#F59E0B', '#F97316']}
+                style={styles.secondaryActionButtonGradient}
+              >
+                <Text style={styles.secondaryActionButtonIcon}>📚</Text>
+                <Text style={styles.secondaryActionButtonText}>Study Plans</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.secondaryActionButton}
+              onPress={() => navigation.navigate('Calendar')}
+            >
+              <LinearGradient
+                colors={['#EC4899', '#F472B6']}
+                style={styles.secondaryActionButtonGradient}
+              >
+                <Text style={styles.secondaryActionButtonIcon}>📅</Text>
+                <Text style={styles.secondaryActionButtonText}>Calendar</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.secondaryActionButton}
+              onPress={() => navigation.navigate('Progress')}
+            >
+              <LinearGradient
+                colors={['#8B5CF6', '#A78BFA']}
+                style={styles.secondaryActionButtonGradient}
+              >
+                <Text style={styles.secondaryActionButtonIcon}>📊</Text>
+                <Text style={styles.secondaryActionButtonText}>Progress</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </Animated.View>
 
@@ -1237,6 +1596,76 @@ export const HomeScreen = ({ navigation }: any) => {
           </View>
         </View>
       </Modal>
+
+      {/* Reminder Options Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showReminderOptions}
+        onRequestClose={() => setShowReminderOptions(false)}
+      >
+        <TouchableOpacity
+          style={styles.reminderOptionsOverlay}
+          activeOpacity={1}
+          onPress={() => setShowReminderOptions(false)}
+        >
+          <View style={styles.reminderOptionsModal}>
+            <View style={styles.reminderOptionsHeader}>
+              <Text style={styles.reminderOptionsTitle}>Reminder Options</Text>
+              <TouchableOpacity onPress={() => setShowReminderOptions(false)}>
+                <Text style={styles.closeButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.reminderOptionsContent}>
+              <TouchableOpacity
+                style={styles.reminderOptionItem}
+                onPress={() => {
+                  setShowReminderOptions(false);
+                  regenerateTodayReminder();
+                }}
+              >
+                <Text style={styles.reminderOptionIcon}>🔄</Text>
+                <Text style={styles.reminderOptionText}>Regenerate Reminder</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.reminderOptionItem}
+                onPress={() => {
+                  setShowReminderOptions(false);
+                  navigation.navigate('Calendar');
+                }}
+              >
+                <Text style={styles.reminderOptionIcon}>📅</Text>
+                <Text style={styles.reminderOptionText}>Go to Calendar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.reminderOptionItem}
+                onPress={() => {
+                  setShowReminderOptions(false);
+                  handleDismissForToday();
+                }}
+              >
+                <Text style={styles.reminderOptionIcon}>🚫</Text>
+                <Text style={styles.reminderOptionText}>Dismiss for Today</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* AI Reminder Generator Modal */}
+      {selectedEventForReminder && (
+        <AIReminderGenerator
+          visible={showReminderGenerator}
+          onClose={() => setShowReminderGenerator(false)}
+          eventId={selectedEventForReminder.id}
+          eventTitle={selectedEventForReminder.title}
+          eventSubject={selectedEventForReminder.subject}
+          onReminderGenerated={handleReminderGenerated}
+        />
+      )}
     </View>
   );
 };
@@ -1333,6 +1762,168 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
   },
+  
+  // AI Reminder Styles
+  aiReminderWrapper: {
+    borderRadius: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    overflow: 'hidden',
+  },
+  aiReminderGradient: {
+    padding: 20,
+    borderRadius: 20,
+  },
+  reminderLoading: {
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+  },
+  reminderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  reminderTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reminderIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  reminderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  reminderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reminderOptionButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  reminderOptionButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  dismissButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dismissButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  reminderContent: {
+    marginBottom: 12,
+  },
+  reminderText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    lineHeight: 24,
+    marginBottom: 12,
+    fontWeight: '500',
+  },
+  reminderEventButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  reminderEventButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  reminderFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  reminderDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
+    opacity: 0.9,
+  },
+  reminderFooterText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  
+  // Reminder Options Modal
+  reminderOptionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reminderOptionsModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '80%',
+    maxWidth: 300,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  reminderOptionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  reminderOptionsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  reminderOptionsContent: {
+    flexDirection: 'column',
+  },
+  reminderOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  reminderOptionIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  reminderOptionText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  
   activeSessionBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1556,13 +2147,66 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 16,
   },
-  actionButtons: {
+  actionButtonsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  actionButton: {
+  primaryActionButton: {
     flex: 1,
+    height: 70,
+    borderRadius: 16,
     marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  primaryActionButtonGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  primaryActionButtonIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  primaryActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  secondaryActionButton: {
+    flex: 1,
+    height: 60,
+    borderRadius: 16,
+    marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  secondaryActionButtonGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  secondaryActionButtonIcon: {
+    fontSize: 20,
+    marginBottom: 2,
+  },
+  secondaryActionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   studyPlansContainer: {
     backgroundColor: '#FFFFFF',
