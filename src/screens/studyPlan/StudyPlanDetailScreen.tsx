@@ -62,7 +62,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
   const [sessionModalVisible, setSessionModalVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<StudyTask | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [sessionNotes, setSessionNotes] = useState('');
   const [sessionTimer, setSessionTimer] = useState(0);
   const [sessionTimerInterval, setSessionTimerInterval] = useState<NodeJS.Timeout | null>(null);
  
@@ -162,7 +161,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
     setSelectedTask(task);
     setSessionStartTime(new Date());
     setSessionTimer(0);
-    setSessionNotes('');
     setSessionModalVisible(true);
   }, []);
 
@@ -177,7 +175,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         subject: string;
         duration_minutes: number;
         session_type: string;
-        notes: string;
         completed_at: string;
         tasks_completed?: string[];
         study_plan_id?: string;
@@ -186,7 +183,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
         subject: currentStudyPlan.subject,
         duration_minutes: durationMinutes,
         session_type: 'study_plan',
-        notes: sessionNotes,
         completed_at: new Date().toISOString(),
       };
      
@@ -213,13 +209,12 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
       setSessionModalVisible(false);
       setSelectedTask(null);
       setSessionStartTime(null);
-      setSessionNotes('');
       Alert.alert('Success', 'Study session completed!');
     } catch (error) {
       console.error('Error completing session:', error);
       Alert.alert('Error', 'Failed to complete study session');
     }
-  }, [selectedTask, sessionStartTime, currentStudyPlan, user, planId, sessionNotes]);
+  }, [selectedTask, sessionStartTime, currentStudyPlan, user, planId]);
 
   const handleDeletePlan = useCallback(() => {
     Alert.alert(
@@ -903,20 +898,6 @@ export const StudyPlanDetailScreen = ({ route, navigation }: any) => {
               <View style={styles.timerContainer}>
                 <Text style={styles.timerLabel}>Time Elapsed</Text>
                 <Text style={styles.timerText}>{formatTime(sessionTimer)}</Text>
-              </View>
-             
-              <View style={styles.notesContainer}>
-                <Text style={styles.notesLabel}>Session Notes</Text>
-                <TextInput
-                  style={styles.notesInput}
-                  value={sessionNotes}
-                  onChangeText={setSessionNotes}
-                  placeholder="Add notes about your study session..."
-                  placeholderTextColor="#9CA3AF"
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
               </View>
              
               <View style={styles.sessionActions}>
@@ -1739,7 +1720,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: moderateScale(24),
     borderTopRightRadius: moderateScale(24),
     padding: moderateScale(24),
-    maxHeight: height * 0.85,
+    maxHeight: height * 0.7,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -1798,7 +1779,7 @@ const styles = StyleSheet.create({
   },
   timerContainer: {
     alignItems: 'center',
-    marginBottom: moderateScale(24),
+    marginBottom: moderateScale(30),
     paddingVertical: moderateScale(20),
     backgroundColor: '#EEF2FF',
     borderRadius: moderateScale(16),
@@ -1816,27 +1797,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111827',
     fontVariant: ['tabular-nums'],
-  },
-  notesContainer: {
-    marginBottom: moderateScale(24),
-  },
-  notesLabel: {
-    fontSize: moderateScale(15),
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: moderateScale(10),
-  },
-  notesInput: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: moderateScale(12),
-    paddingHorizontal: moderateScale(16),
-    paddingVertical: moderateScale(14),
-    fontSize: moderateScale(15),
-    color: '#111827',
-    minHeight: moderateScale(120),
-    textAlignVertical: 'top',
   },
   sessionActions: {
     gap: moderateScale(12),
