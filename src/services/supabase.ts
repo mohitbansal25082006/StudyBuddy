@@ -8,6 +8,7 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { decode } from 'base64-arraybuffer';
+import { StudyResource } from '../types';
 
 // Get environment variables
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -635,4 +636,318 @@ export const getSubjectProgress = async (userId: string) => {
   }));
 
   return progressData;
+};
+
+// ============================================
+// ENHANCED STUDY PLAN HELPER FUNCTIONS
+// ============================================
+
+// Get study plan categories - HANDLES MISSING TABLE
+export const getStudyPlanCategories = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('study_plan_categories')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) {
+      // If table doesn't exist, return empty array
+      if (error.code === 'PGRST205') {
+        console.warn('Study plan categories table does not exist, using empty array');
+        return [];
+      }
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    console.error('Error getting study plan categories:', error);
+    return [];
+  }
+};
+
+// Get user study plan preferences - HANDLES MISSING TABLE
+export const getStudyPlanPreferences = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('study_plan_preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      // If table doesn't exist or no preferences found, return null
+      if (error.code === 'PGRST116' || error.code === 'PGRST205') {
+        console.warn('Study plan preferences table does not exist or no preferences found');
+        return null;
+      }
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    console.error('Error getting study plan preferences:', error);
+    return null;
+  }
+};
+
+// Update user study plan preferences - HANDLES MISSING TABLE
+export const updateStudyPlanPreferences = async (userId: string, preferences: any) => {
+  try {
+    const { data, error } = await supabase
+      .from('study_plan_preferences')
+      .upsert({
+        user_id: userId,
+        ...preferences,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // If table doesn't exist, just return the preferences without saving
+      if (error.code === 'PGRST205') {
+        console.warn('Study plan preferences table does not exist, preferences not saved');
+        return preferences;
+      }
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    console.error('Error updating study plan preferences:', error);
+    return preferences;
+  }
+};
+
+// Add custom resources to a study plan
+export const addCustomResources = async (planId: string, resources: any[]) => {
+  // First, get the current plan
+  const { data: plan, error: planError } = await supabase
+    .from('study_plans')
+    .select('plan_data')
+    .eq('id', planId)
+    .single();
+
+  if (planError) throw planError;
+
+  // Update the plan_data with new resources
+  const updatedPlanData = {
+    ...plan.plan_data,
+    resources: [...plan.plan_data.resources, ...resources],
+  };
+
+  // Update the study plan
+  const { data, error } = await supabase
+    .from('study_plans')
+    .update({
+      plan_data: updatedPlanData,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Add custom tasks to a specific week in a study plan
+export const addCustomTasks = async (planId: string, weekIndex: number, tasks: any[]) => {
+  // First, get the current plan
+  const { data: plan, error: planError } = await supabase
+    .from('study_plans')
+    .select('plan_data')
+    .eq('id', planId)
+    .single();
+
+  if (planError) throw planError;
+
+  // Update the plan_data with new tasks
+  const updatedPlanData = { ...plan.plan_data };
+  updatedPlanData.weeks[weekIndex].tasks = [
+    ...updatedPlanData.weeks[weekIndex].tasks,
+    ...tasks,
+  ];
+
+  // Update the study plan
+  const { data, error } = await supabase
+    .from('study_plans')
+    .update({
+      plan_data: updatedPlanData,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Rate a resource
+export const rateResource = async (planId: string, resourceId: string, rating: number) => {
+  // First, get the current plan
+  const { data: plan, error: planError } = await supabase
+    .from('study_plans')
+    .select('plan_data')
+    .eq('id', planId)
+    .single();
+
+  if (planError) throw planError;
+
+  // Update the resource rating
+  const updatedPlanData = { ...plan.plan_data };
+  const resourceIndex = updatedPlanData.resources.findIndex((r: StudyResource) => r.id === resourceId);
+  
+  if (resourceIndex !== -1) {
+    updatedPlanData.resources[resourceIndex].user_rating = rating;
+  }
+
+  // Update the study plan
+  const { data, error } = await supabase
+    .from('study_plans')
+    .update({
+      plan_data: updatedPlanData,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Add notes to a task
+export const addTaskNotes = async (planId: string, weekIndex: number, taskIndex: number, notes: string) => {
+  // First, get the current plan
+  const { data: plan, error: planError } = await supabase
+    .from('study_plans')
+    .select('plan_data')
+    .eq('id', planId)
+    .single();
+
+  if (planError) throw planError;
+
+  // Update the task notes
+  const updatedPlanData = { ...plan.plan_data };
+  updatedPlanData.weeks[weekIndex].tasks[taskIndex].notes = notes;
+
+  // Update the study plan
+  const { data, error } = await supabase
+    .from('study_plans')
+    .update({
+      plan_data: updatedPlanData,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a detailed study session
+export const createDetailedStudySession = async (session: any) => {
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .insert({
+      ...session,
+      completed_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Get study sessions for a specific study plan
+export const getStudyPlanSessions = async (planId: string) => {
+  const { data, error } = await supabase
+    .from('study_sessions')
+    .select('*')
+    .eq('study_plan_id', planId)
+    .order('completed_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+// ============================================
+// RESOURCE VERIFICATION HELPER FUNCTIONS
+// ============================================
+
+// Verify a resource URL
+export const verifyResourceUrl = async (url: string): Promise<boolean> => {
+  try {
+    // This is a simplified check - in a real app, you might want to use a more sophisticated method
+    const response = await fetch(url, { method: 'HEAD' });
+    return response.ok;
+  } catch (error) {
+    console.error('Error verifying URL:', error);
+    return false;
+  }
+};
+
+// ============================================
+// STUDY PLAN RECOMMENDATIONS - HANDLES MISSING TABLE
+// ============================================
+
+// Get recommended study plans based on user preferences
+export const getRecommendedStudyPlans = async (userId: string, limit: number = 5) => {
+  try {
+    // Get user preferences
+    const preferences = await getStudyPlanPreferences(userId);
+
+    // Get user's completed study plans to understand preferences
+    const { data: completedPlans, error: plansError } = await supabase
+      .from('study_plans')
+      .select('subject, difficulty_level')
+      .eq('user_id', userId)
+      .eq('completed', true);
+
+    if (plansError) throw plansError;
+
+    // Get all study plans
+    let query = supabase
+      .from('study_plans')
+      .select('*')
+      .neq('user_id', userId) // Exclude user's own plans
+      .eq('public', true) // Only public plans
+      .order('rating', { ascending: false })
+      .limit(limit * 2); // Get more than needed to filter
+
+    // Filter by user preferences if available
+    if (preferences) {
+      if (preferences.preferred_difficulty) {
+        query = query.eq('difficulty_level', preferences.preferred_difficulty);
+      }
+      if (preferences.focus_areas && preferences.focus_areas.length > 0) {
+        query = query.in('subject', preferences.focus_areas);
+      }
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      // If public column doesn't exist, try without it
+      if (error.code === 'PGRST204') {
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('study_plans')
+          .select('*')
+          .neq('user_id', userId) // Exclude user's own plans
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        
+        if (fallbackError) throw fallbackError;
+        return fallbackData || [];
+      }
+      throw error;
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error getting recommended study plans:', error);
+    return [];
+  }
 };

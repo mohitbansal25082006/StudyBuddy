@@ -59,34 +59,77 @@ export interface StudyPlan {
   updated_at: string;
 }
 
+// Enhanced Study Plan Data
 export interface StudyPlanData {
   weeks: StudyWeek[];
   resources: StudyResource[];
   milestones: string[];
+  overview: string;
+  prerequisites?: string[];
+  learning_outcomes: string[];
+  assessment_methods: string[];
+  tips: string[];
+  custom_sections?: StudyPlanCustomSection[];
 }
 
+// Custom sections for study plans
+export interface StudyPlanCustomSection {
+  id: string;
+  title: string;
+  content: string;
+  type: 'text' | 'list' | 'resources' | 'tasks';
+}
+
+// Enhanced Study Week with more details
 export interface StudyWeek {
   week: number;
   title: string;
   topics: string[];
   tasks: StudyTask[];
+  objectives: string[];
+  summary?: string;
+  estimated_total_hours: number;
 }
 
+// Enhanced Study Task with more details
 export interface StudyTask {
   id: string;
   title: string;
   description: string;
   duration_minutes: number;
   completed: boolean;
-  type: 'reading' | 'practice' | 'review' | 'assessment';
+  type: 'reading' | 'practice' | 'review' | 'assessment' | 'video' | 'project' | 'discussion';
+  resources: string[]; // IDs of related resources
+  notes?: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  priority: 'low' | 'medium' | 'high';
+  due_date?: string;
+  subtasks?: StudySubtask[];
 }
 
+// Subtasks for complex tasks
+export interface StudySubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+// Enhanced Study Resource with verification
 export interface StudyResource {
   id: string;
   title: string;
-  type: 'video' | 'article' | 'book' | 'website' | 'tool';
+  type: 'video' | 'article' | 'book' | 'website' | 'tool' | 'course' | 'podcast' | 'interactive';
   url: string | null;
   description: string;
+  verified: boolean;
+  rating: number; // 1-5 stars
+  user_rating?: number; // Individual user rating
+  tags: string[];
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  estimated_time?: number; // in minutes
+  preview_image?: string;
+  author?: string;
+  date_published?: string;
 }
 
 // Flashcard types
@@ -107,15 +150,19 @@ export interface Flashcard {
   created_at: string;
 }
 
-// Study Session types
+// Study Session with more details
 export interface StudySession {
   id: string;
   user_id: string;
   subject: string;
   duration_minutes: number;
-  session_type: 'study_plan' | 'flashcards' | 'review';
+  session_type: 'study_plan' | 'flashcards' | 'review' | 'custom';
   completed_at: string;
   notes: string | null;
+  tasks_completed: string[]; // IDs of tasks completed
+  resources_used: string[]; // IDs of resources used
+  rating?: number; // User's rating of the session
+  productivity_score?: number; // AI-calculated productivity score
 }
 
 // Calendar Event types
@@ -150,6 +197,27 @@ export interface StudyPlanForm {
   daily_hours: number;
   goals: string;
   learning_style: 'visual' | 'auditory' | 'reading' | 'kinesthetic';
+}
+
+// Study Plan Categories
+export interface StudyPlanCategory {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+}
+
+// User Study Plan Preferences
+export interface StudyPlanPreferences {
+  preferred_difficulty: 'beginner' | 'intermediate' | 'advanced';
+  preferred_session_length: number; // in minutes
+  preferred_time_of_day: 'morning' | 'afternoon' | 'evening' | 'night';
+  notification_preferences: {
+    reminders: boolean;
+    daily_summary: boolean;
+    weekly_progress: boolean;
+  };
+  focus_areas: string[];
 }
 
 // Props for navigation screens
