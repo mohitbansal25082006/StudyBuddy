@@ -2,6 +2,7 @@
 -- ============================================
 -- STUDYBUDDY COMPLETE DATABASE SCHEMA
 -- Combines Authentication & Profiles, Study Features, and Community Features
+-- Includes Community Features Enhancement (bookmarks, replies, reports, multi-image posts)
 -- ============================================
 
 -- Enable UUID extension (for generating unique IDs)
@@ -219,6 +220,71 @@ CREATE TABLE IF NOT EXISTS comment_likes (
 );
 
 -- ============================================
+-- COMMUNITY FEATURES ENHANCEMENT TABLES
+-- ============================================
+
+-- POST BOOKMARKS TABLE
+CREATE TABLE IF NOT EXISTS post_bookmarks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID REFERENCES community_posts(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(post_id, user_id) -- Ensure a user can only bookmark a post once
+);
+
+-- COMMENT REPLIES TABLE
+CREATE TABLE IF NOT EXISTS comment_replies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    comment_id UUID REFERENCES post_comments(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    likes_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- REPLY LIKES TABLE
+CREATE TABLE IF NOT EXISTS reply_likes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    reply_id UUID REFERENCES comment_replies(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(reply_id, user_id) -- Ensure a user can only like a reply once
+);
+
+-- CONTENT REPORTS TABLE
+CREATE TABLE IF NOT EXISTS content_reports (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    reporter_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('post', 'comment', 'reply')),
+    content_id UUID NOT NULL,
+    reason TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'resolved', 'dismissed')),
+    ai_analysis JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- POST IMAGES TABLE (for multi-image support)
+CREATE TABLE IF NOT EXISTS post_images (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID REFERENCES community_posts(id) ON DELETE CASCADE,
+    image_url TEXT NOT NULL,
+    image_order INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- COMMUNITY GUIDELINES TABLE
+CREATE TABLE IF NOT EXISTS community_guidelines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- These control who can read/write data
 -- ============================================
@@ -233,6 +299,12 @@ ALTER TABLE community_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_likes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE comment_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_bookmarks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comment_replies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reply_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE community_guidelines ENABLE ROW LEVEL SECURITY;
 
 -- Study plans policies
 DO $$ 
@@ -713,11 +785,271 @@ BEGIN
     END IF;
 END $$;
 
+-- Post bookmarks policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view own bookmarks' 
+        AND tablename = 'post_bookmarks'
+    ) THEN
+        CREATE POLICY "Users can view own bookmarks"
+            ON post_bookmarks
+            FOR SELECT
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own bookmarks' 
+        AND tablename = 'post_bookmarks'
+    ) THEN
+        CREATE POLICY "Users can insert own bookmarks"
+            ON post_bookmarks
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own bookmarks' 
+        AND tablename = 'post_bookmarks'
+    ) THEN
+        CREATE POLICY "Users can delete own bookmarks"
+            ON post_bookmarks
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Comment replies policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all replies' 
+        AND tablename = 'comment_replies'
+    ) THEN
+        CREATE POLICY "Users can view all replies"
+            ON comment_replies
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own replies' 
+        AND tablename = 'comment_replies'
+    ) THEN
+        CREATE POLICY "Users can insert own replies"
+            ON comment_replies
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can update own replies' 
+        AND tablename = 'comment_replies'
+    ) THEN
+        CREATE POLICY "Users can update own replies"
+            ON comment_replies
+            FOR UPDATE
+            USING (auth.uid() = user_id)
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own replies' 
+        AND tablename = 'comment_replies'
+    ) THEN
+        CREATE POLICY "Users can delete own replies"
+            ON comment_replies
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Reply likes policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all reply likes' 
+        AND tablename = 'reply_likes'
+    ) THEN
+        CREATE POLICY "Users can view all reply likes"
+            ON reply_likes
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own reply likes' 
+        AND tablename = 'reply_likes'
+    ) THEN
+        CREATE POLICY "Users can insert own reply likes"
+            ON reply_likes
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own reply likes' 
+        AND tablename = 'reply_likes'
+    ) THEN
+        CREATE POLICY "Users can delete own reply likes"
+            ON reply_likes
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Content reports policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view own reports' 
+        AND tablename = 'content_reports'
+    ) THEN
+        CREATE POLICY "Users can view own reports"
+            ON content_reports
+            FOR SELECT
+            USING (auth.uid() = reporter_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own reports' 
+        AND tablename = 'content_reports'
+    ) THEN
+        CREATE POLICY "Users can insert own reports"
+            ON content_reports
+            FOR INSERT
+            WITH CHECK (auth.uid() = reporter_id);
+    END IF;
+END $$;
+
+-- Post images policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all post images' 
+        AND tablename = 'post_images'
+    ) THEN
+        CREATE POLICY "Users can view all post images"
+            ON post_images
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own post images' 
+        AND tablename = 'post_images'
+    ) THEN
+        CREATE POLICY "Users can insert own post images"
+            ON post_images
+            FOR INSERT
+            WITH CHECK (
+                EXISTS (
+                    SELECT 1 FROM community_posts 
+                    WHERE id = post_id AND user_id = auth.uid()
+                )
+            );
+    END IF;
+END $;
+
+DO $ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can update own post images' 
+        AND tablename = 'post_images'
+    ) THEN
+        CREATE POLICY "Users can update own post images"
+            ON post_images
+            FOR UPDATE
+            USING (
+                EXISTS (
+                    SELECT 1 FROM community_posts 
+                    WHERE id = post_id AND user_id = auth.uid()
+                )
+            );
+    END IF;
+END $;
+
+DO $ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own post images' 
+        AND tablename = 'post_images'
+    ) THEN
+        CREATE POLICY "Users can delete own post images"
+            ON post_images
+            FOR DELETE
+            USING (
+                EXISTS (
+                    SELECT 1 FROM community_posts 
+                    WHERE id = post_id AND user_id = auth.uid()
+                )
+            );
+    END IF;
+END $;
+
+-- Community guidelines policies (public read access)
+DO $ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Public can view community guidelines' 
+        AND tablename = 'community_guidelines'
+    ) THEN
+        CREATE POLICY "Public can view community guidelines"
+            ON community_guidelines
+            FOR SELECT
+            USING (true);
+    END IF;
+END $;
+
 -- ============================================
 -- FUNCTION: Auto-create profile on signup
 -- ============================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
     INSERT INTO public.profiles (id, email, full_name)
     VALUES (
@@ -728,7 +1060,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING; -- Prevent errors if profile already exists
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Drop and recreate trigger to ensure it's up to date
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -847,6 +1179,16 @@ CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_comments_user_id ON post_comments(user_id);
 CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
 CREATE INDEX IF NOT EXISTS idx_comment_likes_user_id ON comment_likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_post_bookmarks_post_id ON post_bookmarks(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_bookmarks_user_id ON post_bookmarks(user_id);
+CREATE INDEX IF NOT EXISTS idx_comment_replies_comment_id ON comment_replies(comment_id);
+CREATE INDEX IF NOT EXISTS idx_comment_replies_user_id ON comment_replies(user_id);
+CREATE INDEX IF NOT EXISTS idx_reply_likes_reply_id ON reply_likes(reply_id);
+CREATE INDEX IF NOT EXISTS idx_reply_likes_user_id ON reply_likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_content_reports_content ON content_reports(content_type, content_id);
+CREATE INDEX IF NOT EXISTS idx_content_reports_reporter_id ON content_reports(reporter_id);
+CREATE INDEX IF NOT EXISTS idx_post_images_post_id ON post_images(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_images_order ON post_images(post_id, image_order);
 
 -- ============================================
 -- COMMENTS for documentation
@@ -861,17 +1203,23 @@ COMMENT ON TABLE community_posts IS 'Community posts for sharing study tips and 
 COMMENT ON TABLE post_likes IS 'Likes on community posts';
 COMMENT ON TABLE post_comments IS 'Comments on community posts';
 COMMENT ON TABLE comment_likes IS 'Likes on comments';
+COMMENT ON TABLE post_bookmarks IS 'User bookmarks for community posts';
+COMMENT ON TABLE comment_replies IS 'Replies to comments on community posts';
+COMMENT ON TABLE reply_likes IS 'Likes on comment replies';
+COMMENT ON TABLE content_reports IS 'User reports for inappropriate content';
+COMMENT ON TABLE post_images IS 'Multiple images associated with community posts';
+COMMENT ON TABLE community_guidelines IS 'Community guidelines and rules';
 
 -- ============================================
 -- UPDATE TRIGGER FUNCTION for updated_at columns
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create update trigger for profiles
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
@@ -908,13 +1256,34 @@ CREATE TRIGGER update_post_comments_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Create update trigger for comment_replies
+DROP TRIGGER IF EXISTS update_comment_replies_updated_at ON comment_replies;
+CREATE TRIGGER update_comment_replies_updated_at
+    BEFORE UPDATE ON comment_replies
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create update trigger for content_reports
+DROP TRIGGER IF EXISTS update_content_reports_updated_at ON content_reports;
+CREATE TRIGGER update_content_reports_updated_at
+    BEFORE UPDATE ON content_reports
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create update trigger for community_guidelines
+DROP TRIGGER IF EXISTS update_community_guidelines_updated_at ON community_guidelines;
+CREATE TRIGGER update_community_guidelines_updated_at
+    BEFORE UPDATE ON community_guidelines
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================
 -- FUNCTIONS for updating counts
 -- ============================================
 
 -- Function to update post likes count
 CREATE OR REPLACE FUNCTION update_post_likes_count()
-RETURNS TRIGGER AS $ 
+RETURNS TRIGGER AS $
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE community_posts SET likes_count = likes_count + 1 WHERE id = NEW.post_id;
@@ -936,7 +1305,7 @@ CREATE TRIGGER post_likes_count_trigger
 
 -- Function to update post comments count
 CREATE OR REPLACE FUNCTION update_post_comments_count()
-RETURNS TRIGGER AS $ 
+RETURNS TRIGGER AS $
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE community_posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
@@ -958,7 +1327,7 @@ CREATE TRIGGER post_comments_count_trigger
 
 -- Function to update comment likes count
 CREATE OR REPLACE FUNCTION update_comment_likes_count()
-RETURNS TRIGGER AS $ 
+RETURNS TRIGGER AS $
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE post_comments SET likes_count = likes_count + 1 WHERE id = NEW.comment_id;
@@ -978,10 +1347,58 @@ CREATE TRIGGER comment_likes_count_trigger
     FOR EACH ROW
     EXECUTE FUNCTION update_comment_likes_count();
 
+-- Function to update reply likes count
+CREATE OR REPLACE FUNCTION update_reply_likes_count()
+RETURNS TRIGGER AS $
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE comment_replies SET likes_count = likes_count + 1 WHERE id = NEW.reply_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE comment_replies SET likes_count = likes_count - 1 WHERE id = OLD.reply_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$ LANGUAGE plpgsql;
+
+-- Create trigger for reply likes
+DROP TRIGGER IF EXISTS reply_likes_count_trigger ON reply_likes;
+CREATE TRIGGER reply_likes_count_trigger
+    AFTER INSERT OR DELETE ON reply_likes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_reply_likes_count();
+
+-- ============================================
+-- INSERT DEFAULT COMMUNITY GUIDELINES
+-- ============================================
+INSERT INTO community_guidelines (title, content) VALUES 
+(
+    'StudyBuddy Community Guidelines',
+    'Welcome to the StudyBuddy Community! We want this to be a safe and supportive space for all learners.
+
+1. Be Respectful: Treat everyone with kindness and respect, even if you disagree with their views.
+
+2. Stay on Topic: Keep posts and comments related to education, studying, and learning.
+
+3. No Spam: Do not post repetitive content, advertisements, or irrelevant links.
+
+4. No Harassment: Do not bully, intimidate, or harass other members.
+
+5. No Inappropriate Content: Do not share explicit, violent, or otherwise inappropriate content.
+
+6. Give Credit: When sharing others work or ideas, always give proper credit.
+
+7. Be Constructive: Provide helpful feedback and contribute positively to discussions.
+
+Violations may result in content removal and account suspension. Thank you for helping keep our community positive and productive!'
+)
+ON CONFLICT DO NOTHING;
+
 -- ============================================
 -- FINAL SUCCESS MESSAGE
 -- ============================================
-DO $ 
+DO $
 BEGIN
-    RAISE NOTICE 'StudyBuddy database schema setup completed successfully!';
+    RAISE NOTICE 'StudyBuddy complete database schema with community features enhancement completed successfully!';
 END $;

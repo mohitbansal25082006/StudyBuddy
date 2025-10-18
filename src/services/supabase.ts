@@ -1052,7 +1052,13 @@ export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) 
         full_name,
         avatar_url
       ),
-      post_likes:user_id!post_likes(user_id)
+      post_images (
+        id,
+        image_url,
+        image_order
+      ),
+      post_likes:user_id!post_likes(user_id),
+      post_bookmarks:user_id!post_bookmarks(user_id)
     `)
     .neq('user_id', userId) // Exclude user's own posts
     .order('created_at', { ascending: false })
@@ -1073,7 +1079,13 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
         full_name,
         avatar_url
       ),
-      post_likes:user_id!post_likes(user_id)
+      post_images (
+        id,
+        image_url,
+        image_order
+      ),
+      post_likes:user_id!post_likes(user_id),
+      post_bookmarks:user_id!post_bookmarks(user_id)
     `)
     .eq('id', postId)
     .single();
@@ -1089,7 +1101,19 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
         full_name,
         avatar_url
       ),
-      comment_likes:user_id!comment_likes(user_id)
+      comment_likes:user_id!comment_likes(user_id),
+      comment_replies (
+        id,
+        content,
+        user_id,
+        created_at,
+        updated_at,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        ),
+        reply_likes:user_id!reply_likes(user_id)
+      )
     `)
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
@@ -1100,8 +1124,9 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
 };
 
 // Create a new community post
-export const createCommunityPost = async (post: any) => {
-  const { data, error } = await supabase
+export const createCommunityPost = async (post: any, imageUris?: string[]) => {
+  // Create the post first
+  const { data: newPost, error: postError } = await supabase
     .from('community_posts')
     .insert({
       ...post,
@@ -1110,8 +1135,14 @@ export const createCommunityPost = async (post: any) => {
     .select()
     .single();
 
-  if (error) throw error;
-  return data;
+  if (postError) throw postError;
+
+  // If there are images, upload them
+  if (imageUris && imageUris.length > 0) {
+    await uploadPostImages(post.user_id, newPost.id, imageUris);
+  }
+
+  return newPost;
 };
 
 // Update a community post
@@ -1132,6 +1163,10 @@ export const updateCommunityPost = async (postId: string, updates: any) => {
 
 // Delete a community post
 export const deleteCommunityPost = async (postId: string) => {
+  // Delete images first
+  await deletePostImages(postId);
+  
+  // Then delete the post
   const { error } = await supabase
     .from('community_posts')
     .delete()
@@ -1224,6 +1259,17 @@ export const toggleCommentLike = async (commentId: string, userId: string) => {
   }
 };
 
+// Delete a comment
+export const deleteComment = async (commentId: string) => {
+  const { error } = await supabase
+    .from('post_comments')
+    .delete()
+    .eq('id', commentId);
+
+  if (error) throw error;
+  return true;
+};
+
 // Upload post image
 export const uploadPostImage = async (userId: string, uri: string) => {
   try {
@@ -1270,4 +1316,629 @@ export const uploadPostImage = async (userId: string, uri: string) => {
     console.error('Error uploading post image:', error);
     throw error;
   }
+};
+
+// ============================================
+// BOOKMARK HELPER FUNCTIONS
+// ============================================
+
+// Get user's bookmarked posts
+export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) => {
+  const { data, error } = await supabase
+    .from('post_bookmarks')
+    .select(`
+      *,
+      community_posts:post_id (
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        ),
+        post_images (
+          id,
+          image_url,
+          image_order
+        )
+      )
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw error;
+  return data;
+};
+
+// Toggle bookmark on a post
+export const togglePostBookmark = async (postId: string, userId: string) => {
+  // Check if user already bookmarked the post
+  const { data: existingBookmark } = await supabase
+    .from('post_bookmarks')
+    .select('*')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .single();
+
+  if (existingBookmark) {
+    // User already bookmarked, so remove bookmark
+    const { error } = await supabase
+      .from('post_bookmarks')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return false;
+  } else {
+    // User hasn't bookmarked, so add bookmark
+    const { error } = await supabase
+      .from('post_bookmarks')
+      .insert({
+        post_id: postId,
+        user_id: userId
+      });
+
+    if (error) throw error;
+    return true;
+  }
+};
+
+// ============================================
+// REPLY HELPER FUNCTIONS
+// ============================================
+
+// Get replies for a comment
+export const getCommentReplies = async (commentId: string) => {
+  const { data, error } = await supabase
+    .from('comment_replies')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      reply_likes:user_id!reply_likes(user_id)
+    `)
+    .eq('comment_id', commentId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+// Create a new reply
+export const createReply = async (reply: any) => {
+  const { data, error } = await supabase
+    .from('comment_replies')
+    .insert({
+      ...reply,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a reply
+export const updateReply = async (replyId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('comment_replies')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', replyId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete a reply
+export const deleteReply = async (replyId: string) => {
+  const { error } = await supabase
+    .from('comment_replies')
+    .delete()
+    .eq('id', replyId);
+
+  if (error) throw error;
+  return true;
+};
+
+// Like or unlike a reply
+export const toggleReplyLike = async (replyId: string, userId: string) => {
+  // Check if user already liked the reply
+  const { data: existingLike } = await supabase
+    .from('reply_likes')
+    .select('*')
+    .eq('reply_id', replyId)
+    .eq('user_id', userId)
+    .single();
+
+  if (existingLike) {
+    // User already liked, so unlike
+    const { error } = await supabase
+      .from('reply_likes')
+      .delete()
+      .eq('reply_id', replyId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return false;
+  } else {
+    // User hasn't liked, so like
+    const { error } = await supabase
+      .from('reply_likes')
+      .insert({
+        reply_id: replyId,
+        user_id: userId
+      });
+
+    if (error) throw error;
+    return true;
+  }
+};
+
+// ============================================
+// REPORT HELPER FUNCTIONS
+// ============================================
+
+// Create a new report
+export const createReport = async (report: any) => {
+  const { data, error } = await supabase
+    .from('content_reports')
+    .insert({
+      ...report,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Get reports for a user
+export const getUserReports = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('content_reports')
+    .select('*')
+    .eq('reporter_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a report
+export const updateReport = async (reportId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('content_reports')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// ============================================
+// POST IMAGES HELPER FUNCTIONS
+// ============================================
+
+// Get images for a post
+export const getPostImages = async (postId: string) => {
+  const { data, error } = await supabase
+    .from('post_images')
+    .select('*')
+    .eq('post_id', postId)
+    .order('image_order', { ascending: true });
+
+  if (error) throw error;
+  return data;
+};
+
+// Upload multiple images for a post
+export const uploadPostImages = async (userId: string, postId: string, uris: string[]) => {
+  const uploadedImages = [];
+  
+  for (let i = 0; i < uris.length; i++) {
+    const uri = uris[i];
+    
+    try {
+      // Get file extension from URI
+      const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${userId}/post-${postId}-${i}.${fileExt}`;
+
+      // Fetch the image as a blob
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      // Convert blob to ArrayBuffer
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result instanceof ArrayBuffer) {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed to convert blob to ArrayBuffer'));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(blob);
+      });
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('community-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt}`,
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('community-images')
+        .getPublicUrl(fileName);
+
+      // Save to database
+      const { data: imageData, error: imageError } = await supabase
+        .from('post_images')
+        .insert({
+          post_id: postId,
+          image_url: publicUrlData.publicUrl,
+          image_order: i,
+        })
+        .select()
+        .single();
+
+      if (imageError) throw imageError;
+      
+      uploadedImages.push(imageData);
+    } catch (error) {
+      console.error(`Error uploading image ${i}:`, error);
+      // Continue with other images even if one fails
+    }
+  }
+  
+  return uploadedImages;
+};
+
+// Delete images for a post
+export const deletePostImages = async (postId: string) => {
+  // First get all images for the post
+  const { data: images, error: fetchError } = await supabase
+    .from('post_images')
+    .select('*')
+    .eq('post_id', postId);
+
+  if (fetchError) throw fetchError;
+  
+  // Delete each image from storage
+  for (const image of images) {
+    try {
+      // Extract file path from URL
+      const urlParts = image.image_url.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const filePath = `${urlParts[urlParts.length - 2]}/${fileName}`;
+      
+      const { error } = await supabase.storage
+        .from('community-images')
+        .remove([filePath]);
+        
+      if (error) console.error('Error deleting image from storage:', error);
+    } catch (error) {
+      console.error('Error deleting image from storage:', error);
+    }
+  }
+  
+  // Delete image records from database
+  const { error } = await supabase
+    .from('post_images')
+    .delete()
+    .eq('post_id', postId);
+
+  if (error) throw error;
+  return true;
+};
+
+// ============================================
+// COMMUNITY GUIDELINES HELPER FUNCTIONS
+// ============================================
+
+// Get community guidelines
+export const getCommunityGuidelines = async () => {
+  const { data, error } = await supabase
+    .from('community_guidelines')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error;
+  return data;
+};
+
+// Update community guidelines
+export const updateCommunityGuidelines = async (id: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('community_guidelines')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// ============================================
+// COMMUNITY SERVICE FUNCTIONS
+// ============================================
+
+// Get posts for community service
+export const getPosts = async (userId: string, limit = 20, offset = 0) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      post_images (
+        id,
+        image_url,
+        image_order
+      ),
+      post_likes:user_id!post_likes(user_id),
+      post_bookmarks:user_id!post_bookmarks(user_id)
+    `)
+    .neq('user_id', userId) // Exclude user's own posts
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw error;
+  return data;
+};
+
+// Get post with comments for community service
+export const getPostWithComments = async (postId: string, userId: string) => {
+  // Get the post
+  const { data: post, error: postError } = await supabase
+    .from('community_posts')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      post_images (
+        id,
+        image_url,
+        image_order
+      ),
+      post_likes:user_id!post_likes(user_id),
+      post_bookmarks:user_id!post_bookmarks(user_id)
+    `)
+    .eq('id', postId)
+    .single();
+
+  if (postError) throw postError;
+
+  // Get comments for the post
+  const { data: comments, error: commentsError } = await supabase
+    .from('post_comments')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      comment_likes:user_id!comment_likes(user_id),
+      comment_replies (
+        id,
+        content,
+        user_id,
+        created_at,
+        updated_at,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        ),
+        reply_likes:user_id!reply_likes(user_id)
+      )
+    `)
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+
+  if (commentsError) throw commentsError;
+
+  return { post, comments };
+};
+
+// Create post for community service
+export const createPost = async (post: any) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .insert({
+      ...post,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update post for community service
+export const updatePost = async (postId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', postId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete post for community service
+export const deletePost = async (postId: string) => {
+  // Delete images first
+  await deletePostImages(postId);
+  
+  // Then delete the post
+  const { error } = await supabase
+    .from('community_posts')
+    .delete()
+    .eq('id', postId);
+
+  if (error) throw error;
+  return true;
+};
+
+// Toggle post like for community service
+export const togglePostLike = async (postId: string, userId: string) => {
+  // Check if user already liked the post
+  const { data: existingLike } = await supabase
+    .from('post_likes')
+    .select('*')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .single();
+
+  if (existingLike) {
+    // User already liked, so unlike
+    const { error } = await supabase
+      .from('post_likes')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return false;
+  } else {
+    // User hasn't liked, so like
+    const { error } = await supabase
+      .from('post_likes')
+      .insert({
+        post_id: postId,
+        user_id: userId
+      });
+
+    if (error) throw error;
+    return true;
+  }
+};
+
+// Create comment for community service
+export const createComment = async (comment: any) => {
+  const { data, error } = await supabase
+    .from('post_comments')
+    .insert({
+      ...comment,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Get user posts for community service
+export const getUserPosts = async (userId: string, limit = 20, offset = 0) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      post_images (
+        id,
+        image_url,
+        image_order
+      ),
+      post_likes:user_id!post_likes(user_id),
+      post_bookmarks:user_id!post_bookmarks(user_id)
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw error;
+  return data;
+};
+
+// ============================================
+// REALTIME SUBSCRIPTION FUNCTIONS
+// ============================================
+
+// Subscribe to posts changes
+export const subscribeToPosts = (userId: string, callback: (payload: any) => void) => {
+  const subscription = supabase
+    .channel('posts_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'community_posts',
+        filter: `user_id=neq.${userId}`,
+      },
+      callback
+    )
+    .subscribe();
+
+  return subscription;
+};
+
+// Subscribe to comments changes
+export const subscribeToComments = (postId: string, callback: (payload: any) => void) => {
+  const subscription = supabase
+    .channel(`comments_${postId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'post_comments',
+        filter: `post_id=eq.${postId}`,
+      },
+      callback
+    )
+    .subscribe();
+
+  return subscription;
+};
+
+// Unsubscribe from channel
+export const unsubscribeFromChannel = (subscription: any) => {
+  supabase.removeChannel(subscription);
+};
+
+// Unsubscribe from all channels
+export const unsubscribeFromAll = () => {
+  supabase.removeAllChannels();
 };

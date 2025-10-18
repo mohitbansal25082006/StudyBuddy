@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -16,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { getPosts, semanticSearch, togglePostLike, subscribeToPosts, unsubscribeFromPosts } from '../../services/communityService';
+import { getUserBookmarks, togglePostBookmark } from '../../services/supabase';
 import { CommunityPost } from '../../types';
 import { PostCard } from '../../components/community/PostCard';
 import { SearchBar } from '../../components/community/SearchBar';
@@ -28,12 +30,49 @@ type CommunityStackParamList = {
   Community: undefined;
   PostDetail: { postId: string };
   CreatePost: undefined;
+  CommunityGuidelines: undefined;
+  Bookmarks: undefined;
+  ReportContent: { 
+    contentType: 'post' | 'comment' | 'reply'; 
+    contentId: string; 
+    contentAuthorId: string;
+  };
 };
 
 type CommunityScreenNavigationProp = StackNavigationProp<
   CommunityStackParamList,
   'Community'
 >;
+
+// Define type for bookmark data from Supabase
+interface BookmarkData {
+  id: string;
+  post_id: string;
+  user_id: string;
+  created_at: string;
+  community_posts?: {
+    id: string;
+    user_id: string;
+    title: string;
+    content: string;
+    image_url: string | null;
+    tags: string[];
+    likes_count: number;
+    comments_count: number;
+    created_at: string;
+    updated_at: string;
+    profiles?: {
+      full_name: string;
+      avatar_url: string | null;
+    };
+    post_images?: Array<{
+      id: string;
+      image_url: string;
+      image_order: number;
+    }>;
+    post_likes?: any[];
+  };
+}
 
 export const CommunityScreen: React.FC = () => {
   const navigation = useNavigation<CommunityScreenNavigationProp>();
@@ -61,11 +100,80 @@ export const CommunityScreen: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [searchResults, setSearchResults] = useState<CommunityPost[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [bookmarkedPosts, setBookmarkedPosts] = useState<CommunityPost[]>([]);
+  const [bookmarkedPostIds, setBookmarkedPostIds] = useState<Set<string>>(new Set());
   
   // Use ref to track if initial load is done
   const hasLoadedRef = useRef(false);
+  const bookmarksLoadedRef = useRef(false);
 
-  // Load posts function - uses functional update to avoid circular dependency
+  // Convert bookmark data to CommunityPost format
+  const convertBookmarkToPost = useCallback((bookmark: BookmarkData): CommunityPost | null => {
+    if (!bookmark.community_posts) return null;
+    
+    const post = bookmark.community_posts;
+    
+    return {
+      id: post.id,
+      user_id: post.user_id,
+      user_name: post.profiles?.full_name || 'Unknown User',
+      user_avatar: post.profiles?.avatar_url || null,
+      title: post.title,
+      content: post.content,
+      image_url: post.image_url,
+      images: post.post_images?.map(img => ({
+        id: img.id,
+        post_id: post.id,
+        image_url: img.image_url,
+        image_order: img.image_order,
+        created_at: new Date().toISOString(),
+      })) || [],
+      tags: post.tags || [],
+      likes: post.likes_count || 0,
+      comments: post.comments_count || 0,
+      liked_by_user: !!post.post_likes?.length,
+      bookmarked_by_user: true,
+      created_at: post.created_at,
+      updated_at: post.updated_at,
+    };
+  }, []);
+
+  // Load bookmarks function - updates the bookmarked post IDs set
+  const loadBookmarks = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const userBookmarks = await getUserBookmarks(user.id);
+      const convertedPosts = (userBookmarks as BookmarkData[])
+        .map(convertBookmarkToPost)
+        .filter((post): post is CommunityPost => post !== null);
+      
+      setBookmarkedPosts(convertedPosts);
+      
+      // Update bookmarked post IDs set
+      const bookmarkedIds = new Set(convertedPosts.map(post => post.id));
+      setBookmarkedPostIds(bookmarkedIds);
+      
+      bookmarksLoadedRef.current = true;
+      
+      return bookmarkedIds;
+    } catch (error) {
+      console.error('Error loading bookmarks:', error);
+      setError('Failed to load bookmarks. Please try again.');
+      return new Set<string>();
+    }
+  }, [user, convertBookmarkToPost, setError]);
+
+  // Apply bookmark status to posts
+  const applyBookmarkStatus = useCallback((postsToUpdate: CommunityPost[], bookmarkIds: Set<string>): CommunityPost[] => {
+    return postsToUpdate.map(post => ({
+      ...post,
+      bookmarked_by_user: bookmarkIds.has(post.id)
+    }));
+  }, []);
+
+  // Load posts function - applies bookmark status after loading
   const loadPosts = useCallback(
     async (pageNum = 0, reset = false) => {
       if (!user) return;
@@ -79,11 +187,14 @@ export const CommunityScreen: React.FC = () => {
 
         const newPosts = await getPosts(user.id, 20, pageNum * 20);
 
+        // Apply bookmark status to new posts
+        const postsWithBookmarkStatus = applyBookmarkStatus(newPosts, bookmarkedPostIds);
+
         if (reset) {
-          setPosts(newPosts);
+          setPosts(postsWithBookmarkStatus);
         } else {
           // Use functional update to append to existing posts
-          setPosts((prevPosts: CommunityPost[]) => [...prevPosts, ...newPosts]);
+          setPosts((prevPosts: CommunityPost[]) => [...prevPosts, ...postsWithBookmarkStatus]);
         }
 
         setHasMore(newPosts.length === 20);
@@ -97,8 +208,16 @@ export const CommunityScreen: React.FC = () => {
         setRefreshing(false);
       }
     },
-    [user, setPosts, setLoading, setError]
+    [user, setPosts, setLoading, setError, bookmarkedPostIds, applyBookmarkStatus]
   );
+
+  // Toggle between posts and bookmarks view
+  const toggleBookmarksView = useCallback(() => {
+    setShowBookmarks(!showBookmarks);
+    if (!showBookmarks) {
+      loadBookmarks();
+    }
+  }, [showBookmarks, loadBookmarks]);
 
   // Set up real-time subscription
   useEffect(() => {
@@ -121,7 +240,10 @@ export const CommunityScreen: React.FC = () => {
             // Check if this post is already in our list
             const postExists = posts.some(p => p.id === fullPosts[0].id);
             if (!postExists) {
-              setPosts((prevPosts: CommunityPost[]) => [fullPosts[0], ...prevPosts]);
+              // Apply bookmark status
+              const postWithBookmarkStatus = applyBookmarkStatus([fullPosts[0]], bookmarkedPostIds)[0];
+              
+              setPosts((prevPosts: CommunityPost[]) => [postWithBookmarkStatus, ...prevPosts]);
             }
           }
         } catch (error) {
@@ -140,7 +262,8 @@ export const CommunityScreen: React.FC = () => {
                   tags: newRecord.tags || post.tags,
                   likes: newRecord.likes_count || post.likes,
                   comments: newRecord.comments_count || post.comments,
-                  updated_at: newRecord.updated_at || post.updated_at
+                  updated_at: newRecord.updated_at || post.updated_at,
+                  bookmarked_by_user: bookmarkedPostIds.has(post.id)
                 } 
               : post
           )
@@ -162,37 +285,76 @@ export const CommunityScreen: React.FC = () => {
       unsubscribeFromPosts();
       setSubscriptionActive(false);
     };
-  }, [user, setPosts, setSubscriptionActive]);
+  }, [user, setPosts, setSubscriptionActive, bookmarkedPostIds, applyBookmarkStatus, posts]);
 
-  // Initial load on mount
+  // Initial load on mount - load bookmarks first, then posts
   useEffect(() => {
-    if (user && !hasLoadedRef.current) {
-      loadPosts(0, true);
+    const initializeData = async () => {
+      if (user && !hasLoadedRef.current) {
+        // Load bookmarks first to get the bookmark IDs
+        const bookmarkIds = await loadBookmarks();
+        
+        // Then load posts with bookmark status
+        if (bookmarkIds) {
+          // Wait a bit for state to update
+          setTimeout(() => {
+            loadPosts(0, true);
+          }, 100);
+        } else {
+          // Load posts anyway even if bookmarks failed
+          loadPosts(0, true);
+        }
+      }
+    };
+    
+    initializeData();
+  }, [user]); // Only depend on user
+
+  // Update posts with bookmark status whenever bookmarkedPostIds changes
+  useEffect(() => {
+    if (bookmarksLoadedRef.current && posts.length > 0) {
+      setPosts((prevPosts) => applyBookmarkStatus(prevPosts, bookmarkedPostIds));
     }
-  }, [user, loadPosts]);
+  }, [bookmarkedPostIds]); // Only re-run when bookmarkedPostIds changes
 
   // Reload on focus (if needed)
   useFocusEffect(
     useCallback(() => {
       if (user && hasLoadedRef.current) {
-        // Only refresh if already loaded before
-        loadPosts(0, true);
+        // Refresh bookmarks first
+        const refreshData = async () => {
+          await loadBookmarks();
+          // Small delay to ensure bookmark state is updated before refreshing posts
+          setTimeout(() => {
+            loadPosts(0, true);
+          }, 100);
+        };
+        refreshData();
       }
-    }, [user, loadPosts])
+    }, [user]) // Simplified dependencies
   );
 
   // Refresh handler
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadPosts(0, true);
-  }, [loadPosts]);
+    if (showBookmarks) {
+      await loadBookmarks();
+      setRefreshing(false);
+    } else {
+      // Load bookmarks first, then posts
+      await loadBookmarks();
+      setTimeout(() => {
+        loadPosts(0, true);
+      }, 100);
+    }
+  }, [loadPosts, loadBookmarks, showBookmarks]);
 
   // Load more handler
   const handleLoadMore = useCallback(() => {
-    if (!loading && hasMore && !isSearching) {
+    if (!loading && hasMore && !isSearching && !showBookmarks) {
       loadPosts(page + 1, false);
     }
-  }, [loading, hasMore, page, isSearching, loadPosts]);
+  }, [loading, hasMore, page, isSearching, loadPosts, showBookmarks]);
 
   // Search handler
   const handleSearch = useCallback(async () => {
@@ -204,7 +366,11 @@ export const CommunityScreen: React.FC = () => {
     try {
       setSearching(true);
       const results = await semanticSearch(searchQuery, user.id);
-      setSearchResults(results);
+      
+      // Apply bookmark status to search results
+      const resultsWithBookmarkStatus = applyBookmarkStatus(results, bookmarkedPostIds);
+      
+      setSearchResults(resultsWithBookmarkStatus);
       setIsSearching(true);
     } catch (error) {
       console.error('Error searching posts:', error);
@@ -212,7 +378,7 @@ export const CommunityScreen: React.FC = () => {
     } finally {
       setSearching(false);
     }
-  }, [user, searchQuery, setError]);
+  }, [user, searchQuery, setError, bookmarkedPostIds, applyBookmarkStatus]);
 
   // Tag filter handler
   const handleTagFilter = useCallback(
@@ -261,43 +427,105 @@ export const CommunityScreen: React.FC = () => {
     [user, updatePost]
   );
 
-  // Render post item
+  // Handle bookmark toggle
+  const handleToggleBookmark = useCallback(
+    async (post: CommunityPost) => {
+      if (!user) return;
+
+      try {
+        const isBookmarked = await togglePostBookmark(post.id, user.id);
+        
+        // Update bookmarked post IDs set immediately
+        setBookmarkedPostIds(prev => {
+          const newSet = new Set(prev);
+          if (isBookmarked) {
+            newSet.add(post.id);
+          } else {
+            newSet.delete(post.id);
+          }
+          return newSet;
+        });
+        
+        // Update the specific post in all relevant states
+        const updatePostBookmarkStatus = (posts: CommunityPost[]) => 
+          posts.map(p => p.id === post.id ? { ...p, bookmarked_by_user: isBookmarked } : p);
+        
+        // Update in main posts
+        setPosts(updatePostBookmarkStatus);
+        
+        // Update in search results if searching
+        if (isSearching) {
+          setSearchResults(updatePostBookmarkStatus);
+        }
+        
+        // If we're showing bookmarks, refresh the bookmarks list
+        if (showBookmarks) {
+          loadBookmarks();
+        }
+      } catch (error) {
+        console.error('Error toggling bookmark:', error);
+        Alert.alert('Error', 'Failed to bookmark post. Please try again.');
+      }
+    },
+    [user, setPosts, showBookmarks, loadBookmarks, isSearching]
+  );
+
+  // Handle report
+  const handleReport = useCallback((postId: string, authorId: string) => {
+    navigation.navigate('ReportContent', { 
+      contentType: 'post', 
+      contentId: postId,
+      contentAuthorId: authorId
+    });
+  }, [navigation]);
+
+  // Navigate to bookmarks screen
+  const navigateToBookmarks = useCallback(() => {
+    navigation.navigate('Bookmarks');
+  }, [navigation]);
+
+  // Render post item - single render function for all cases
   const renderPost = useCallback(
     ({ item }: { item: CommunityPost }) => (
       <PostCard
         post={item}
         onLike={() => handleLikePost(item)}
         onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
+        onBookmark={() => handleToggleBookmark(item)}
+        onReport={() => handleReport(item.id, item.user_id)}
       />
     ),
-    [handleLikePost, navigation]
+    [handleLikePost, navigation, handleToggleBookmark, handleReport]
   );
 
   // Render footer
   const renderFooter = useCallback(() => {
-    if (!loading || posts.length === 0) return null;
+    if (!loading || (showBookmarks ? bookmarkedPosts.length : posts.length) === 0) return null;
     return (
       <View style={styles.footerLoader}>
         <ActivityIndicator size="large" color="#6366F1" />
       </View>
     );
-  }, [loading, posts.length]);
+  }, [loading, posts.length, bookmarkedPosts.length, showBookmarks]);
 
   // Render list separator
   const renderSeparator = useCallback(() => {
     return <View style={styles.separator} />;
   }, []);
 
-  // Get display posts
-  const displayPosts = isSearching ? searchResults : posts;
+  // Get display data - now always returns CommunityPost[]
+  const displayData: CommunityPost[] = showBookmarks 
+    ? bookmarkedPosts
+    : (isSearching ? searchResults : posts);
 
-  // Filter posts by tags
-  const filteredPosts =
-    selectedTags.length > 0
-      ? displayPosts.filter((post) =>
-          post.tags.some((tag) => selectedTags.includes(tag))
-        )
-      : displayPosts;
+  // Filter by tags (only for posts, not bookmarks)
+  const filteredData = showBookmarks
+    ? displayData
+    : (selectedTags.length > 0
+        ? displayData.filter((post: CommunityPost) =>
+            post.tags.some((tag) => selectedTags.includes(tag))
+          )
+        : displayData);
 
   // Show initial loading
   if (loading && posts.length === 0 && !hasLoadedRef.current) {
@@ -308,19 +536,37 @@ export const CommunityScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Community</Text>
+        <Text style={styles.headerTitle}>
+          {showBookmarks ? 'Bookmarks' : 'Community'}
+        </Text>
 
         <View style={styles.headerActions}>
           <TouchableOpacity
-            onPress={() => setShowSearch(!showSearch)}
-            style={styles.headerButton}
+            onPress={toggleBookmarksView}
+            style={[
+              styles.headerButton,
+              showBookmarks && styles.activeHeaderButton
+            ]}
           >
             <Ionicons 
-              name={showSearch ? "close" : "search"} 
+              name={showBookmarks ? "bookmark" : "bookmark-outline"} 
               size={24} 
-              color="#6B7280" 
+              color={showBookmarks ? "#6366F1" : "#6B7280"} 
             />
           </TouchableOpacity>
+
+          {!showBookmarks && (
+            <TouchableOpacity
+              onPress={() => setShowSearch(!showSearch)}
+              style={styles.headerButton}
+            >
+              <Ionicons 
+                name={showSearch ? "close" : "search"} 
+                size={24} 
+                color="#6B7280" 
+              />
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             onPress={() => navigation.navigate('CreatePost')}
@@ -328,11 +574,18 @@ export const CommunityScreen: React.FC = () => {
           >
             <Ionicons name="add-circle" size={24} color="#6366F1" />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CommunityGuidelines')}
+            style={styles.headerButton}
+          >
+            <Ionicons name="information-circle-outline" size={24} color="#6B7280" />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search Bar */}
-      {showSearch && (
+      {/* Search Bar - only show when not in bookmarks view */}
+      {showSearch && !showBookmarks && (
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -342,11 +595,13 @@ export const CommunityScreen: React.FC = () => {
         />
       )}
 
-      {/* Tag Filter */}
-      <TagFilter selectedTags={selectedTags} onTagPress={handleTagFilter} />
+      {/* Tag Filter - only show when not in bookmarks view */}
+      {!showBookmarks && (
+        <TagFilter selectedTags={selectedTags} onTagPress={handleTagFilter} />
+      )}
 
-      {/* Real-time indicator */}
-      {subscriptionActive && (
+      {/* Real-time indicator - only show when not in bookmarks view */}
+      {!showBookmarks && subscriptionActive && (
         <View style={styles.realtimeIndicator}>
           <View style={styles.realtimeDot} />
           <Text style={styles.realtimeText}>Live updates</Text>
@@ -361,32 +616,48 @@ export const CommunityScreen: React.FC = () => {
           <TouchableOpacity
             onPress={() => {
               setError(null);
-              loadPosts(0, true);
+              if (showBookmarks) {
+                loadBookmarks();
+              } else {
+                loadPosts(0, true);
+              }
             }}
             style={styles.retryButton}
           >
             <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
-      ) : filteredPosts.length === 0 && !loading ? (
+      ) : filteredData.length === 0 && !loading ? (
         <EmptyState
-          title={isSearching ? 'No Results Found' : 'No Posts Yet'}
-          subtitle={
-            isSearching
-              ? 'Try adjusting your search or filters'
-              : 'Be the first to share something with the community!'
+          title={
+            showBookmarks 
+              ? 'No Bookmarked Posts' 
+              : (isSearching ? 'No Results Found' : 'No Posts Yet')
           }
-          icon={isSearching ? 'search' : 'chatbubble-ellipses'}
-          actionLabel={isSearching ? 'Clear Search' : 'Create Post'}
+          subtitle={
+            showBookmarks
+              ? 'Posts you bookmark will appear here for easy access.'
+              : (isSearching
+                ? 'Try adjusting your search or filters'
+                : 'Be the first to share something with the community!')
+          }
+          icon={showBookmarks ? 'bookmark' : (isSearching ? 'search' : 'chatbubble-ellipses')}
+          actionLabel={
+            showBookmarks 
+              ? 'Explore Community' 
+              : (isSearching ? 'Clear Search' : 'Create Post')
+          }
           onAction={
-            isSearching ? clearSearch : () => navigation.navigate('CreatePost')
+            showBookmarks 
+              ? () => navigation.navigate('Community')
+              : (isSearching ? clearSearch : () => navigation.navigate('CreatePost'))
           }
         />
       ) : (
         <FlatList
-          data={filteredPosts}
+          data={filteredData}
           renderItem={renderPost}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item.id || `post-${index}`}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -405,6 +676,7 @@ export const CommunityScreen: React.FC = () => {
           maxToRenderPerBatch={10}
           updateCellsBatchingPeriod={50}
           windowSize={10}
+          extraData={bookmarkedPostIds}
         />
       )}
     </View>
@@ -439,6 +711,10 @@ const styles = StyleSheet.create({
   headerButton: {
     marginLeft: 16,
     padding: 4,
+  },
+  activeHeaderButton: {
+    backgroundColor: '#EBF5FF',
+    borderRadius: 16,
   },
   realtimeIndicator: {
     flexDirection: 'row',

@@ -21,10 +21,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { getPostWithComments, togglePostLike, createComment, toggleCommentLike, deleteComment } from '../../services/communityService';
-import { generateComment } from '../../services/communityAI';
+import { createReply, toggleReplyLike, deleteReply } from '../../services/supabase';
+import { generateComment, generateReply } from '../../services/communityAI';
 import { CommunityPost, Comment, AppStackParamList } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { CommentItem } from '../../components/community/CommentItem';
+import { ImageViewer } from '../../components/community/ImageViewer';
+import { ReportModal } from '../../components/community/ReportModal';
 
 type PostDetailScreenNavigationProp = StackNavigationProp<AppStackParamList, 'PostDetail'>;
 type PostDetailScreenRouteProp = RouteProp<AppStackParamList, 'PostDetail'>;
@@ -56,6 +59,23 @@ export const PostDetailScreen: React.FC = () => {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [aiGeneratingComment, setAiGeneratingComment] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  
+  // New state for image viewer
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [currentImages, setCurrentImages] = useState<string[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // New state for report modal
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportContentType, setReportContentType] = useState<'post' | 'comment' | 'reply'>('post');
+  const [reportContentId, setReportContentId] = useState('');
+  const [reportContentAuthorId, setReportContentAuthorId] = useState('');
+  
+  // New state for replies
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [submittingReply, setSubmittingReply] = useState(false);
+  const [aiGeneratingReply, setAiGeneratingReply] = useState(false);
 
   // Load post and comments
   const loadPostAndComments = useCallback(async () => {
@@ -81,6 +101,21 @@ export const PostDetailScreen: React.FC = () => {
     setRefreshing(true);
     loadPostAndComments();
   }, [loadPostAndComments]);
+
+  // Handle image viewing
+  const handleViewImages = (images: string[], initialIndex = 0) => {
+    setCurrentImages(images);
+    setCurrentImageIndex(initialIndex);
+    setShowImageViewer(true);
+  };
+
+  // Handle reporting
+  const handleReport = (contentType: 'post' | 'comment' | 'reply', contentId: string, contentAuthorId: string) => {
+    setReportContentType(contentType);
+    setReportContentId(contentId);
+    setReportContentAuthorId(contentAuthorId);
+    setShowReportModal(true);
+  };
 
   // Handle like post
   const handleLikePost = useCallback(async () => {
@@ -165,6 +200,111 @@ export const PostDetailScreen: React.FC = () => {
       Alert.alert('Error', 'Failed to delete comment. Please try again.');
     }
   }, [deleteComment, deleteCommentFromStore, comments]);
+
+  // Handle reply submission
+  const handleSubmitReply = useCallback(async (commentId: string) => {
+    if (!user || !replyText.trim()) return;
+    
+    try {
+      setSubmittingReply(true);
+      
+      const newReply = await createReply({
+        comment_id: commentId,
+        user_id: user.id,
+        content: replyText.trim(),
+      });
+      
+      // Update local state
+      setComments(comments.map(comment => 
+        comment.id === commentId 
+          ? { 
+              ...comment, 
+              replies: [newReply, ...comment.replies] 
+            } 
+          : comment
+      ));
+      
+      setReplyText('');
+      setReplyingTo(null);
+    } catch (error) {
+      console.error('Error creating reply:', error);
+      Alert.alert('Error', 'Failed to post reply. Please try again.');
+    } finally {
+      setSubmittingReply(false);
+    }
+  }, [user, replyText, comments]);
+
+  // Handle AI reply generation
+  const handleGenerateReply = useCallback(async (commentId: string, commentContent: string) => {
+    if (!user) return;
+    
+    try {
+      setAiGeneratingReply(true);
+      
+      const userProfile = {
+        full_name: user.email?.split('@')[0] || 'User',
+        learning_style: 'visual',
+        subjects: [],
+      };
+      
+      const generatedReply = await generateReply(commentContent, userProfile);
+      setReplyText(generatedReply);
+      setReplyingTo(commentId);
+    } catch (error) {
+      console.error('Error generating reply:', error);
+      Alert.alert('Error', 'Failed to generate reply. Please try again.');
+    } finally {
+      setAiGeneratingReply(false);
+    }
+  }, [user]);
+
+  // Handle reply like
+  const handleLikeReply = useCallback(async (replyId: string) => {
+    if (!user) return;
+    
+    try {
+      const isLiked = await toggleReplyLike(replyId, user.id);
+      
+      // Update local state
+      setComments(comments.map(comment => ({
+        ...comment,
+        replies: comment.replies.map(reply => 
+          reply.id === replyId 
+            ? { 
+                ...reply, 
+                liked_by_user: isLiked,
+                likes: isLiked ? reply.likes + 1 : reply.likes - 1
+              } 
+            : reply
+        )
+      })));
+    } catch (error) {
+      console.error('Error liking reply:', error);
+      Alert.alert('Error', 'Failed to like reply. Please try again.');
+    }
+  }, [user, comments]);
+
+  // Handle reply deletion
+  const handleDeleteReply = useCallback(async (commentId: string, replyId: string) => {
+    try {
+      await deleteReply(replyId);
+      
+      // Update local state
+      setComments(comments.map(comment => 
+        comment.id === commentId 
+          ? { 
+              ...comment, 
+              replies: comment.replies.filter(reply => reply.id !== replyId) 
+            } 
+          : comment
+      ));
+      
+      Alert.alert('Success', 'Reply deleted successfully');
+    } catch (error) {
+      console.error('Error deleting reply:', error);
+      Alert.alert('Error', 'Failed to delete reply. Please try again.');
+    }
+  }, [comments]);
 
   // Handle AI generate comment
   const handleGenerateComment = useCallback(async () => {
@@ -257,6 +397,70 @@ export const PostDetailScreen: React.FC = () => {
     );
   }
 
+  // Post images section
+  const postImagesSection = post.images && post.images.length > 0 ? (
+    <View style={styles.imagesContainer}>
+      {post.images.length === 1 ? (
+        <TouchableOpacity onPress={() => handleViewImages([post.images[0].image_url])}>
+          <Image source={{ uri: post.images[0].image_url }} style={styles.postImage} />
+        </TouchableOpacity>
+      ) : post.images.length === 2 ? (
+        <View style={styles.twoImagesContainer}>
+          {post.images.map((image, index) => (
+            <TouchableOpacity 
+              key={image.id} 
+              onPress={() => handleViewImages(post.images.map(img => img.image_url), index)}
+              style={styles.halfImageContainer}
+            >
+              <Image source={{ uri: image.image_url }} style={styles.halfImage} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.multipleImagesContainer}>
+          <TouchableOpacity 
+            onPress={() => handleViewImages(post.images.map(img => img.image_url), 0)}
+            style={styles.mainImageContainer}
+          >
+            <Image source={{ uri: post.images[0].image_url }} style={styles.mainImage} />
+            {post.images.length > 1 && (
+              <View style={styles.imageOverlay}>
+                <Text style={styles.imageOverlayText}>
+                  +{post.images.length - 1} more
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {post.images.length > 1 && (
+            <View style={styles.thumbnailContainer}>
+              {post.images.slice(1, 4).map((image, index) => (
+                <TouchableOpacity 
+                  key={image.id} 
+                  onPress={() => handleViewImages(post.images.map(img => img.image_url), index + 1)}
+                  style={styles.thumbnail}
+                >
+                  <Image source={{ uri: image.image_url }} style={styles.thumbnailImage} />
+                </TouchableOpacity>
+              ))}
+              {post.images.length > 4 && (
+                <View style={styles.moreImagesThumbnail}>
+                  <Text style={styles.moreImagesText}>
+                    +{post.images.length - 4}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  ) : post.image_url ? (
+    <TouchableOpacity onPress={() => handleViewImages([post.image_url!])}>
+      <Image source={{ uri: post.image_url }} style={styles.postImage} />
+    </TouchableOpacity>
+  ) : null;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -307,10 +511,8 @@ export const PostDetailScreen: React.FC = () => {
           {/* Post Content */}
           <Text style={styles.postContent}>{post.content}</Text>
 
-          {/* Post Image */}
-          {post.image_url && (
-            <Image source={{ uri: post.image_url }} style={styles.postImage} />
-          )}
+          {/* Post Images */}
+          {postImagesSection}
 
           {/* Post Tags */}
           {post.tags.length > 0 && (
@@ -341,6 +543,13 @@ export const PostDetailScreen: React.FC = () => {
               <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
               <Text style={styles.actionText}>{post.comments}</Text>
             </View>
+            
+            <TouchableOpacity
+              onPress={() => handleReport('post', post.id, post.user_id)}
+              style={styles.actionButton}
+            >
+              <Ionicons name="flag-outline" size={20} color="#6B7280" />
+            </TouchableOpacity>
           </View>
 
           {/* Comments Section */}
@@ -353,13 +562,59 @@ export const PostDetailScreen: React.FC = () => {
               </View>
             ) : (
               comments.map((comment) => (
-                <CommentItem
-                  key={comment.id}
-                  comment={comment}
-                  onLike={() => handleLikeComment(comment.id)}
-                  onDelete={() => handleDeleteComment(comment.id)}
-                  isAuthor={comment.user_id === user?.id}
-                />
+                <View key={comment.id} style={styles.commentContainer}>
+                  <CommentItem
+                    comment={comment}
+                    onLike={() => handleLikeComment(comment.id)}
+                    onDelete={() => handleDeleteComment(comment.id)}
+                    onReply={(content) => handleSubmitReply(comment.id)}
+                    onReplyLike={(replyId) => handleLikeReply(replyId)}
+                    onReplyDelete={(replyId) => handleDeleteReply(comment.id, replyId)}
+                    isAuthor={comment.user_id === user?.id}
+                    userId={user?.id || ''}
+                  />
+                  
+                  {/* Reply Input */}
+                  {replyingTo === comment.id && (
+                    <View style={styles.replyInputContainer}>
+                      <TextInput
+                        value={replyText}
+                        onChangeText={setReplyText}
+                        placeholder="Write a reply..."
+                        multiline
+                        style={styles.replyInput}
+                      />
+                      
+                      <View style={styles.replyActions}>
+                        <TouchableOpacity
+                          onPress={() => handleGenerateReply(comment.id, comment.content)}
+                          disabled={aiGeneratingReply}
+                          style={[
+                            styles.aiReplyButton,
+                            { opacity: aiGeneratingReply ? 0.5 : 1 }
+                          ]}
+                        >
+                          <Ionicons name="sparkles" size={16} color="#6366F1" />
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          onPress={() => handleSubmitReply(comment.id)}
+                          disabled={submittingReply || !replyText.trim()}
+                          style={[
+                            styles.submitReplyButton,
+                            { opacity: (submittingReply || !replyText.trim()) ? 0.5 : 1 }
+                          ]}
+                        >
+                          {submittingReply ? (
+                            <Ionicons name="hourglass-outline" size={16} color="#FFFFFF" />
+                          ) : (
+                            <Ionicons name="send" size={16} color="#FFFFFF" />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
               ))
             )}
           </View>
@@ -447,6 +702,23 @@ export const PostDetailScreen: React.FC = () => {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* Image Viewer Modal */}
+        <ImageViewer
+          visible={showImageViewer}
+          images={currentImages}
+          initialIndex={currentImageIndex}
+          onClose={() => setShowImageViewer(false)}
+        />
+
+        {/* Report Modal */}
+        <ReportModal
+          visible={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          contentType={reportContentType}
+          contentId={reportContentId}
+          contentAuthorId={reportContentAuthorId}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -525,6 +797,75 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
   },
+  imagesContainer: {
+    marginBottom: 16,
+  },
+  twoImagesContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  halfImageContainer: {
+    width: '48%',
+  },
+  halfImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 12,
+  },
+  multipleImagesContainer: {
+    flexDirection: 'row',
+  },
+  mainImageContainer: {
+    width: '65%',
+    marginRight: 8,
+    position: 'relative',
+  },
+  mainImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+  },
+  imageOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  imageOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  thumbnailContainer: {
+    width: '35%',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  },
+  thumbnail: {
+    height: 64,
+    marginBottom: 4,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  moreImagesThumbnail: {
+    height: 64,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreImagesText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -579,6 +920,43 @@ const styles = StyleSheet.create({
   noCommentsText: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  commentContainer: {
+    marginBottom: 8,
+  },
+  replyInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  replyInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    marginRight: 8,
+    maxHeight: 80,
+  },
+  replyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  aiReplyButton: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    padding: 8,
+    marginRight: 8,
+  },
+  submitReplyButton: {
+    backgroundColor: '#6366F1',
+    borderRadius: 16,
+    padding: 8,
   },
   commentInputContainer: {
     flexDirection: 'row',

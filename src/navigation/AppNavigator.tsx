@@ -8,6 +8,8 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 
 // Screens
 import { ProfileSetupScreen } from '../screens/profile/ProfileSetupScreen';
@@ -34,6 +36,10 @@ import { CreatePostScreen } from '../screens/community/CreatePostScreen';
 import { PostDetailScreen } from '../screens/community/PostDetailScreen';
 import { EditPostScreen } from '../screens/community/EditPostScreen';
 import { ProfileScreen } from '../screens/community/ProfileScreen';
+import { CommunityGuidelinesScreen } from '../screens/community/CommunityGuidelinesScreen';
+import { BookmarksScreen } from '../screens/community/BookmarksScreen';
+import { ImageViewer } from '../components/community/ImageViewer';
+import { ReportContentScreen } from '../screens/community/ReportContentScreen';
 
 // Types & Store
 import { AppStackParamList } from '../types';
@@ -138,6 +144,28 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
         {getShortLabel(name)}
       </Text>
     </View>
+  );
+};
+
+// ============================================
+// IMAGE VIEWER SCREEN WRAPPER
+// ============================================
+
+type ImageViewerScreenRouteProp = RouteProp<AppStackParamList, 'ImageViewer'>;
+type ImageViewerScreenNavigationProp = StackNavigationProp<AppStackParamList, 'ImageViewer'>;
+
+const ImageViewerScreen: React.FC = () => {
+  const route = useRoute<ImageViewerScreenRouteProp>();
+  const navigation = useNavigation<ImageViewerScreenNavigationProp>();
+  const { images, initialIndex } = route.params;
+
+  return (
+    <ImageViewer
+      visible={true}
+      images={images}
+      initialIndex={initialIndex}
+      onClose={() => navigation.goBack()}
+    />
   );
 };
 
@@ -283,6 +311,41 @@ export const AppNavigator: React.FC = () => {
         component={ProfileScreen} 
         options={{
           presentation: 'card',
+        }}
+      />
+      
+      {/* New Community Screens */}
+      <Stack.Screen 
+        name="CommunityGuidelines" 
+        component={CommunityGuidelinesScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      
+      <Stack.Screen 
+        name="Bookmarks" 
+        component={BookmarksScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      
+      <Stack.Screen 
+        name="ImageViewer" 
+        component={ImageViewerScreen} 
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
+      />
+      
+      <Stack.Screen 
+        name="ReportContent" 
+        component={ReportContentScreen} 
+        options={{
+          presentation: 'modal',
+          headerShown: false,
         }}
       />
       

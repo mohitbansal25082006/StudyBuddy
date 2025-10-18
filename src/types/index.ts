@@ -318,6 +318,46 @@ export interface AIWeeklySummary {
 }
 
 // Community Feed types
+export interface PostBookmark {
+  id: string;
+  post_id: string;
+  user_id: string;
+  created_at: string;
+}
+
+export interface PostImage {
+  id: string;
+  post_id: string;
+  image_url: string;
+  image_order: number;
+  created_at: string;
+}
+
+export interface CommunityGuideline {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentReport {
+  id: string;
+  reporter_id: string;
+  content_type: 'post' | 'comment' | 'reply';
+  content_id: string;
+  reason: string;
+  description: string | null;
+  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  ai_analysis: {
+    isViolation: boolean;
+    confidence: number;
+    explanation: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CommunityPost {
   id: string;
   user_id: string;
@@ -325,10 +365,25 @@ export interface CommunityPost {
   user_avatar: string | null;
   title: string;
   content: string;
-  image_url: string | null;
+  image_url: string | null; // Keep for backward compatibility
+  images: PostImage[]; // New multi-image support
   tags: string[];
   likes: number;
   comments: number;
+  liked_by_user: boolean;
+  bookmarked_by_user: boolean; // New bookmark status
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommentReply {
+  id: string;
+  comment_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  content: string;
+  likes: number;
   liked_by_user: boolean;
   created_at: string;
   updated_at: string;
@@ -343,6 +398,7 @@ export interface Comment {
   content: string;
   likes: number;
   liked_by_user: boolean;
+  replies: CommentReply[]; // New replies support
   created_at: string;
   updated_at: string;
 }
@@ -383,4 +439,12 @@ export type AppStackParamList = {
   PostDetail: { postId: string };
   EditPost: { postId: string };
   Profile: { userId: string };
+  CommunityGuidelines: undefined;
+  ImageViewer: { images: string[]; initialIndex: number };
+  Bookmarks: undefined;
+  ReportContent: {
+    contentType: 'post' | 'comment' | 'reply';
+    contentId: string;
+    contentAuthorId: string;
+  };
 };

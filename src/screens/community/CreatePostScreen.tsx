@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  Image,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -20,10 +19,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { createPost, uploadPostImage } from '../../services/communityService';
-import { tagPostContent, improvePostContent, moderateContent } from '../../services/communityAI';
+import { tagPostContent, improvePostContent, advancedModerateContent } from '../../services/communityAI';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { TagInput } from '../../components/community/TagInput';
+import { MultiImageUpload } from '../../components/community/MultiImageUpload';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
 export const CreatePostScreen: React.FC = () => {
@@ -34,37 +34,13 @@ export const CreatePostScreen: React.FC = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
   const [showTagModal, setShowTagModal] = useState(false);
-
-  // Handle image selection
-  const handleSelectImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0].uri) {
-        setImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error selecting image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
-    }
-  }, []);
-
-  // Handle remove image
-  const handleRemoveImage = useCallback(() => {
-    setImage(null);
-  }, []);
 
   // Handle AI tag suggestion
   const handleSuggestTags = useCallback(async () => {
@@ -122,26 +98,39 @@ export const CreatePostScreen: React.FC = () => {
     try {
       setLoading(true);
 
-      // Moderate content
-      const moderation = await moderateContent(content);
+      // Moderate content and images
+      const moderation = await advancedModerateContent(content, images);
       if (!moderation.isAppropriate) {
         Alert.alert('Content Flagged', moderation.reason || 'Your content may not be appropriate for the community.');
         return;
       }
 
-      // Upload image if selected
-      let imageUrl: string | undefined = undefined;
-      if (image) {
-        imageUrl = await uploadPostImage(user.id, image);
+      // Upload images first if any
+      let uploadedImageUrls: string[] = [];
+      if (images.length > 0) {
+        try {
+          const uploadResults = await Promise.all(
+            images.map(async (imageUri) => {
+              const imageUrl = await uploadPostImage(imageUri, user.id);
+              return imageUrl;
+            })
+          );
+          // Filter out any undefined values
+          uploadedImageUrls = uploadResults.filter((url): url is string => url !== undefined);
+        } catch (uploadError) {
+          console.error('Error uploading images:', uploadError);
+          Alert.alert('Error', 'Failed to upload images. Please try again.');
+          return;
+        }
       }
 
-      // Create post
+      // Create post with uploaded image URLs
       const newPost = await createPost({
         user_id: user.id,
         title: title.trim(),
         content: content.trim(),
-        image_url: imageUrl, // Now undefined instead of null
         tags,
+        image_url: uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : undefined,
       });
 
       // Add to local state
@@ -164,7 +153,7 @@ export const CreatePostScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [title, content, tags, image, user, addPost, navigation]);
+  }, [title, content, tags, images, user, addPost, navigation]);
 
   // Handle toggle tag suggestion selection
   const handleToggleSuggestion = useCallback((tag: string) => {
@@ -339,26 +328,12 @@ export const CreatePostScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Image */}
-          {image ? (
-            <View style={styles.imageContainer}>
-              <Image source={{ uri: image }} style={styles.image} />
-              <TouchableOpacity
-                onPress={handleRemoveImage}
-                style={styles.removeImageButton}
-              >
-                <Ionicons name="close-circle" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={handleSelectImage}
-              style={styles.addImageButton}
-            >
-              <Ionicons name="image" size={24} color="#9CA3AF" />
-              <Text style={styles.addImageText}>Add Image</Text>
-            </TouchableOpacity>
-          )}
+          {/* Multi-Image Upload */}
+          <MultiImageUpload
+            images={images}
+            onChange={setImages}
+            maxImages={5}
+          />
         </ScrollView>
 
         {/* Loading Overlay */}
@@ -570,39 +545,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#64748B',
     fontStyle: 'italic',
-  },
-  imageContainer: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  image: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 12,
-  },
-  addImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  addImageText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#9CA3AF',
-    marginLeft: 8,
   },
   loadingOverlay: {
     position: 'absolute',

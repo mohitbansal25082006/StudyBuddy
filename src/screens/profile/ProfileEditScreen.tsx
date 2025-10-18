@@ -17,8 +17,9 @@ import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
 import { updateProfile, uploadAvatar } from '../../services/supabase';
 import { getUserPosts, deletePost } from '../../services/communityService';
+import { getUserBookmarks } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
-import { CommunityPost } from '../../types';
+import { CommunityPost, PostBookmark, PostImage } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
@@ -31,6 +32,32 @@ const LEARNING_STYLES = [
 
 const GRADE_LEVELS = ['High School', 'Undergraduate', 'Graduate', 'Professional', 'Self-Learning'];
 const COMMON_SUBJECTS = ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'English', 'History', 'Geography', 'Economics', 'Psychology'];
+
+// Define a type for the bookmark data with post information
+interface BookmarkWithPost extends PostBookmark {
+  community_posts?: {
+    id: string;
+    user_id: string;
+    title: string;
+    content: string;
+    image_url: string | null;
+    tags: string[];
+    likes_count: number;
+    comments_count: number;
+    created_at: string;
+    updated_at: string;
+    profiles?: {
+      full_name: string;
+      avatar_url: string | null;
+    };
+    post_images?: Array<{
+      id: string;
+      image_url: string;
+      image_order: number;
+    }>;
+    post_likes?: any[];
+  };
+}
 
 export const ProfileEditScreen = ({ navigation }: any) => {
   const { user, profile, setProfile, logout } = useAuthStore();
@@ -49,6 +76,11 @@ export const ProfileEditScreen = ({ navigation }: any) => {
   const [userPosts, setUserPosts] = useState<CommunityPost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Bookmarks states
+  const [bookmarks, setBookmarks] = useState<CommunityPost[]>([]);
+  const [loadingBookmarks, setLoadingBookmarks] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
 
   // Load user posts
   useEffect(() => {
@@ -70,17 +102,82 @@ export const ProfileEditScreen = ({ navigation }: any) => {
     loadUserPosts();
   }, [user]);
 
+  // Load bookmarks
+  const loadBookmarks = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingBookmarks(true);
+      const userBookmarks = await getUserBookmarks(user.id, 5, 0);
+      
+      // Extract post data from bookmarks with proper error handling
+      const bookmarkedPosts = userBookmarks.map((bookmark: BookmarkWithPost) => {
+        // Check if community_posts exists
+        if (!bookmark.community_posts) {
+          console.warn('Bookmark without post data:', bookmark.id);
+          return null;
+        }
+        
+        const post = bookmark.community_posts;
+        
+        // Convert post_images to PostImage format with null check
+        const images: PostImage[] = (post.post_images || []).map(img => ({
+          id: img.id,
+          post_id: post.id,
+          image_url: img.image_url,
+          image_order: img.image_order,
+          created_at: new Date().toISOString(), // Use current time as fallback
+        }));
+        
+        return {
+          id: post.id,
+          user_id: post.user_id,
+          user_name: post.profiles?.full_name || 'Unknown User',
+          user_avatar: post.profiles?.avatar_url || null,
+          title: post.title,
+          content: post.content,
+          image_url: post.image_url,
+          images: images,
+          tags: post.tags || [],
+          likes: post.likes_count || 0,
+          comments: post.comments_count || 0,
+          liked_by_user: !!post.post_likes?.length,
+          bookmarked_by_user: true,
+          created_at: post.created_at,
+          updated_at: post.updated_at,
+        };
+      }).filter(Boolean) as CommunityPost[]; // Filter out null values
+      
+      setBookmarks(bookmarkedPosts);
+    } catch (error) {
+      console.error('Error loading bookmarks:', error);
+      Alert.alert('Error', 'Failed to load bookmarks');
+    } finally {
+      setLoadingBookmarks(false);
+    }
+  };
+
+  // Load bookmarks when component mounts
+  useEffect(() => {
+    loadBookmarks();
+  }, [user]);
+
   // Refresh all data
   const handleRefresh = async () => {
     if (!user) return;
     
     try {
       setRefreshing(true);
+      
+      // Refresh posts
       const posts = await getUserPosts(user.id, 20, 0);
       setUserPosts(posts);
+      
+      // Refresh bookmarks
+      await loadBookmarks();
     } catch (error) {
-      console.error('Error refreshing posts:', error);
-      Alert.alert('Error', 'Failed to refresh posts');
+      console.error('Error refreshing data:', error);
+      Alert.alert('Error', 'Failed to refresh data');
     } finally {
       setRefreshing(false);
     }
@@ -259,6 +356,20 @@ export const ProfileEditScreen = ({ navigation }: any) => {
         </View>
       )}
     </View>
+  );
+
+  // Render a bookmarked post
+  const renderBookmarkedPost = (item: CommunityPost) => (
+    <TouchableOpacity 
+      key={item.id} 
+      style={styles.bookmarkedPostItem}
+      onPress={() => navigator.navigate('PostDetail', { postId: item.id })}
+    >
+      <Text style={styles.bookmarkedPostTitle} numberOfLines={2}>{item.title}</Text>
+      <Text style={styles.bookmarkedPostDate}>
+        {new Date(item.created_at).toLocaleDateString()}
+      </Text>
+    </TouchableOpacity>
   );
 
   return (
@@ -498,6 +609,32 @@ export const ProfileEditScreen = ({ navigation }: any) => {
             numberOfLines={3}
           />
 
+          {/* Bookmarks Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Bookmarked Posts</Text>
+              <TouchableOpacity
+                onPress={() => navigator.navigate('Bookmarks')}
+                style={styles.viewAllButton}
+              >
+                <Text style={styles.viewAllButtonText}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            {loadingBookmarks ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading bookmarks...</Text>
+              </View>
+            ) : bookmarks.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>You haven't bookmarked any posts yet.</Text>
+              </View>
+            ) : (
+              <View style={styles.bookmarksContainer}>
+                {bookmarks.map(renderBookmarkedPost)}
+              </View>
+            )}
+          </View>
+
           {/* My Posts Section */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -567,6 +704,17 @@ const styles = StyleSheet.create({
   },
   createPostButton: {
     padding: 4,
+  },
+  viewAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  viewAllButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6366F1',
   },
   postsContainer: {
     marginBottom: 8,
@@ -647,6 +795,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginLeft: 4,
+  },
+  bookmarksContainer: {
+    marginBottom: 8,
+  },
+  bookmarkedPostItem: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  bookmarkedPostTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  bookmarkedPostDate: {
+    fontSize: 12,
+    color: '#6B7280',
   },
   loadingContainer: {
     padding: 20,
