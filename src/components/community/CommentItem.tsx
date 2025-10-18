@@ -7,12 +7,9 @@ import {
   Image,
   StyleSheet,
   Alert,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Comment, CommentReply } from '../../types';
+import { Comment } from '../../types';
 import { formatDistanceToNow } from 'date-fns';
 import { ReplyItem } from './ReplyItem';
 
@@ -20,7 +17,7 @@ interface CommentItemProps {
   comment: Comment;
   onLike: () => void;
   onDelete: () => void;
-  onReply: (content: string) => void;
+  onReply: () => void; // Changed to just trigger reply mode
   onReplyLike: (replyId: string) => void;
   onReplyDelete: (replyId: string) => void;
   isAuthor: boolean;
@@ -50,9 +47,7 @@ export const CommentItem: React.FC<CommentItemProps> = ({
   userId,
 }) => {
   const [showOptions, setShowOptions] = useState(false);
-  const [showReplyInput, setShowReplyInput] = useState(false);
-  const [replyText, setReplyText] = useState('');
-  const [showReplies, setShowReplies] = useState(false);
+  const [showReplies, setShowReplies] = useState(true); // Default to showing replies
 
   const handleDeleteComment = () => {
     Alert.alert(
@@ -63,15 +58,6 @@ export const CommentItem: React.FC<CommentItemProps> = ({
         { text: 'Delete', onPress: onDelete, style: 'destructive' },
       ]
     );
-  };
-
-  const handleSubmitReply = () => {
-    if (replyText.trim()) {
-      onReply(replyText.trim());
-      setReplyText('');
-      setShowReplyInput(false);
-      setShowReplies(true);
-    }
   };
 
   const handleReportComment = () => {
@@ -123,12 +109,12 @@ export const CommentItem: React.FC<CommentItemProps> = ({
             size={16}
             color={comment.liked_by_user ? "#EF4444" : "#6B7280"}
           />
-          <Text style={styles.actionText}>{comment.likes}</Text>
+          <Text style={styles.actionText}>{comment.likes || 0}</Text>
         </TouchableOpacity>
        
         <TouchableOpacity
           style={styles.action}
-          onPress={() => setShowReplyInput(!showReplyInput)}
+          onPress={onReply}
         >
           <Ionicons name="arrow-undo" size={16} color="#6B7280" />
           <Text style={styles.actionText}>Reply</Text>
@@ -150,30 +136,6 @@ export const CommentItem: React.FC<CommentItemProps> = ({
           </TouchableOpacity>
         )}
       </View>
-
-      {/* Reply Input */}
-      {showReplyInput && (
-        <View style={styles.replyInputContainer}>
-          <TextInput
-            value={replyText}
-            onChangeText={setReplyText}
-            placeholder="Write a reply..."
-            multiline
-            style={styles.replyInput}
-          />
-          <TouchableOpacity
-            onPress={handleSubmitReply}
-            style={styles.submitReplyButton}
-            disabled={!replyText.trim()}
-          >
-            <Ionicons
-              name="send"
-              size={16}
-              color={replyText.trim() ? "#6366F1" : "#D1D5DB"}
-            />
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Replies */}
       {showReplies && comment.replies && comment.replies.length > 0 && (
@@ -283,28 +245,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#6B7280',
     marginLeft: 4,
-  },
-  replyInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  replyInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    marginRight: 8,
-    maxHeight: 80,
-  },
-  submitReplyButton: {
-    padding: 8,
   },
   repliesContainer: {
     marginTop: 8,

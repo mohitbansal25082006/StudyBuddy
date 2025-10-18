@@ -1068,7 +1068,7 @@ export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) 
   return data;
 };
 
-// Get a single community post with comments
+// Get a single community post with comments - FIXED VERSION
 export const getCommunityPostWithComments = async (postId: string, userId: string) => {
   // Get the post
   const { data: post, error: postError } = await supabase
@@ -1101,26 +1101,50 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
         full_name,
         avatar_url
       ),
-      comment_likes:user_id!comment_likes(user_id),
-      comment_replies (
-        id,
-        content,
-        user_id,
-        created_at,
-        updated_at,
-        profiles:user_id (
-          full_name,
-          avatar_url
-        ),
-        reply_likes:user_id!reply_likes(user_id)
-      )
+      comment_likes:user_id!comment_likes(user_id)
     `)
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
 
   if (commentsError) throw commentsError;
 
-  return { post, comments };
+  // Process comments to include replies
+  const processedComments = await Promise.all((comments || []).map(async (comment) => {
+    // Get replies for each comment
+    const { data: replies } = await supabase
+      .from('comment_replies')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq('comment_id', comment.id)
+      .order('created_at', { ascending: true });
+
+    // Get reply likes for each reply - FIXED: Check if replies exists
+    const repliesWithLikes = await Promise.all((replies || []).map(async (reply) => {
+      const { data: replyLikes } = await supabase
+        .from('reply_likes')
+        .select('*')
+        .eq('reply_id', reply.id)
+        .eq('user_id', userId);
+
+      return {
+        ...reply,
+        liked_by_user: (replyLikes && replyLikes.length > 0) || false,
+      };
+    }));
+
+    return {
+      ...comment,
+      liked_by_user: (comment.comment_likes && comment.comment_likes.length > 0) || false,
+      replies: repliesWithLikes || [],
+    };
+  }));
+
+  return { post, comments: processedComments };
 };
 
 // Create a new community post
@@ -1396,8 +1420,7 @@ export const getCommentReplies = async (commentId: string) => {
       profiles:user_id (
         full_name,
         avatar_url
-      ),
-      reply_likes:user_id!reply_likes(user_id)
+      )
     `)
     .eq('comment_id', commentId)
     .order('created_at', { ascending: true });
@@ -1625,20 +1648,22 @@ export const deletePostImages = async (postId: string) => {
   if (fetchError) throw fetchError;
   
   // Delete each image from storage
-  for (const image of images) {
-    try {
-      // Extract file path from URL
-      const urlParts = image.image_url.split('/');
-      const fileName = urlParts[urlParts.length - 1];
-      const filePath = `${urlParts[urlParts.length - 2]}/${fileName}`;
-      
-      const { error } = await supabase.storage
-        .from('community-images')
-        .remove([filePath]);
+  if (images) {
+    for (const image of images) {
+      try {
+        // Extract file path from URL
+        const urlParts = image.image_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        const filePath = `${urlParts[urlParts.length - 2]}/${fileName}`;
         
-      if (error) console.error('Error deleting image from storage:', error);
-    } catch (error) {
-      console.error('Error deleting image from storage:', error);
+        const { error } = await supabase.storage
+          .from('community-images')
+          .remove([filePath]);
+          
+        if (error) console.error('Error deleting image from storage:', error);
+      } catch (error) {
+        console.error('Error deleting image from storage:', error);
+      }
     }
   }
   
@@ -1715,7 +1740,7 @@ export const getPosts = async (userId: string, limit = 20, offset = 0) => {
   return data;
 };
 
-// Get post with comments for community service
+// Get post with comments for community service - FIXED VERSION
 export const getPostWithComments = async (postId: string, userId: string) => {
   // Get the post
   const { data: post, error: postError } = await supabase
@@ -1748,26 +1773,50 @@ export const getPostWithComments = async (postId: string, userId: string) => {
         full_name,
         avatar_url
       ),
-      comment_likes:user_id!comment_likes(user_id),
-      comment_replies (
-        id,
-        content,
-        user_id,
-        created_at,
-        updated_at,
-        profiles:user_id (
-          full_name,
-          avatar_url
-        ),
-        reply_likes:user_id!reply_likes(user_id)
-      )
+      comment_likes:user_id!comment_likes(user_id)
     `)
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
 
   if (commentsError) throw commentsError;
 
-  return { post, comments };
+  // Process comments to include replies
+  const processedComments = await Promise.all((comments || []).map(async (comment) => {
+    // Get replies for each comment
+    const { data: replies } = await supabase
+      .from('comment_replies')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq('comment_id', comment.id)
+      .order('created_at', { ascending: true });
+
+    // Get reply likes for each reply - FIXED: Check if replies exists
+    const repliesWithLikes = await Promise.all((replies || []).map(async (reply) => {
+      const { data: replyLikes } = await supabase
+        .from('reply_likes')
+        .select('*')
+        .eq('reply_id', reply.id)
+        .eq('user_id', userId);
+
+      return {
+        ...reply,
+        liked_by_user: (replyLikes && replyLikes.length > 0) || false,
+      };
+    }));
+
+    return {
+      ...comment,
+      liked_by_user: (comment.comment_likes && comment.comment_likes.length > 0) || false,
+      replies: repliesWithLikes || [],
+    };
+  }));
+
+  return { post, comments: processedComments };
 };
 
 // Create post for community service

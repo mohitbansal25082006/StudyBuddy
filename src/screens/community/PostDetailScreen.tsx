@@ -1,4 +1,3 @@
-// F:\StudyBuddy\src\screens\community\PostDetailScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -20,8 +19,17 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
-import { getPostWithComments, togglePostLike, createComment, toggleCommentLike, deleteComment } from '../../services/communityService';
-import { createReply, toggleReplyLike, deleteReply } from '../../services/supabase';
+import { 
+  supabase,
+  togglePostLike, 
+  createComment, 
+  toggleCommentLike, 
+  deleteComment,
+  createReply,
+  toggleReplyLike,
+  deleteReply,
+  deletePost,
+} from '../../services/supabase';
 import { generateComment, generateReply } from '../../services/communityAI';
 import { CommunityPost, Comment, AppStackParamList } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -39,7 +47,6 @@ const getAvatarUrl = (userAvatar?: string | null, userName?: string | null, user
   }
   
   // Use DiceBear Avatars API - free avatar generation service
-  // Using 'initials' style as fallback
   const seed = userId || userName || 'default';
   return `https://api.dicebear.com/7.x/initials/png?seed=${encodeURIComponent(seed)}&backgroundColor=6366F1&textColor=ffffff`;
 };
@@ -60,18 +67,18 @@ export const PostDetailScreen: React.FC = () => {
   const [aiGeneratingComment, setAiGeneratingComment] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   
-  // New state for image viewer
+  // Image viewer state
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [currentImages, setCurrentImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
-  // New state for report modal
+  // Report modal state
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportContentType, setReportContentType] = useState<'post' | 'comment' | 'reply'>('post');
   const [reportContentId, setReportContentId] = useState('');
   const [reportContentAuthorId, setReportContentAuthorId] = useState('');
   
-  // New state for replies
+  // Reply state
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [submittingReply, setSubmittingReply] = useState(false);
@@ -83,9 +90,147 @@ export const PostDetailScreen: React.FC = () => {
     
     try {
       setLoading(true);
-      const { post: postData, comments: commentsData } = await getPostWithComments(postId, user.id);
-      setPost(postData);
-      setComments(commentsData);
+      
+      // Get the post
+      const { data: postData, error: postError } = await supabase
+        .from('community_posts')
+        .select(`
+          *,
+          profiles!community_posts_user_id_fkey (
+            full_name,
+            avatar_url
+          ),
+          post_images (
+            id,
+            image_url,
+            image_order
+          )
+        `)
+        .eq('id', postId)
+        .single();
+
+      if (postError) throw postError;
+
+      // Get total post likes count
+      const { count: postLikesCount } = await supabase
+        .from('post_likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+
+      // Check if user liked the post
+      const { data: userPostLike } = await supabase
+        .from('post_likes')
+        .select('user_id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      // Check if user bookmarked the post
+      const { data: postBookmarks } = await supabase
+        .from('post_bookmarks')
+        .select('user_id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id);
+
+      // Get total comments count
+      const { count: commentsCount } = await supabase
+        .from('post_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+
+      // Get comments for the post
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('post_comments')
+        .select(`
+          *,
+          profiles!post_comments_user_id_fkey (
+            full_name,
+            avatar_url
+          )
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (commentsError) throw commentsError;
+
+      // For each comment, get likes count and replies
+      const commentsWithDetails = await Promise.all((commentsData || []).map(async (comment) => {
+        // Get total comment likes count
+        const { count: commentLikesCount } = await supabase
+          .from('comment_likes')
+          .select('*', { count: 'exact', head: true })
+          .eq('comment_id', comment.id);
+
+        // Check if user liked this comment
+        const { data: userCommentLike } = await supabase
+          .from('comment_likes')
+          .select('user_id')
+          .eq('comment_id', comment.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        // Get replies for the comment
+        const { data: replies } = await supabase
+          .from('comment_replies')
+          .select(`
+            *,
+            profiles!comment_replies_user_id_fkey (
+              full_name,
+              avatar_url
+            )
+          `)
+          .eq('comment_id', comment.id)
+          .order('created_at', { ascending: true });
+
+        // For each reply, get likes count and check if user liked it
+        const repliesWithLikes = await Promise.all((replies || []).map(async (reply) => {
+          // Get total reply likes count
+          const { count: replyLikesCount } = await supabase
+            .from('reply_likes')
+            .select('*', { count: 'exact', head: true })
+            .eq('reply_id', reply.id);
+
+          // Check if user liked this reply
+          const { data: userReplyLike } = await supabase
+            .from('reply_likes')
+            .select('user_id')
+            .eq('reply_id', reply.id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          return {
+            ...reply,
+            user_name: reply.profiles?.full_name || 'Unknown User',
+            user_avatar: reply.profiles?.avatar_url || null,
+            liked_by_user: !!userReplyLike,
+            likes: replyLikesCount || 0,
+          };
+        }));
+
+        return {
+          ...comment,
+          user_name: comment.profiles?.full_name || 'Unknown User',
+          user_avatar: comment.profiles?.avatar_url || null,
+          liked_by_user: !!userCommentLike,
+          likes: commentLikesCount || 0,
+          replies: repliesWithLikes || [],
+        };
+      }));
+      
+      // Format post with required fields
+      const formattedPost: CommunityPost = {
+        ...postData,
+        images: postData.post_images || [],
+        liked_by_user: !!userPostLike,
+        bookmarked_by_user: postBookmarks && postBookmarks.length > 0,
+        user_name: postData.profiles?.full_name || 'Unknown User',
+        user_avatar: postData.profiles?.avatar_url || null,
+        likes: postLikesCount || 0,
+        comments: commentsCount || 0,
+      };
+      
+      setPost(formattedPost);
+      setComments(commentsWithDetails);
     } catch (error) {
       console.error('Error loading post:', error);
       Alert.alert('Error', 'Failed to load post. Please try again.');
@@ -128,7 +273,7 @@ export const PostDetailScreen: React.FC = () => {
       const updatedPost = {
         ...post,
         liked_by_user: isLiked,
-        likes: isLiked ? post.likes + 1 : post.likes - 1
+        likes: isLiked ? (post.likes || 0) + 1 : Math.max(0, (post.likes || 0) - 1)
       };
       
       setPost(updatedPost);
@@ -153,7 +298,7 @@ export const PostDetailScreen: React.FC = () => {
       const updatedComment = {
         ...comment,
         liked_by_user: isLiked,
-        likes: isLiked ? comment.likes + 1 : comment.likes - 1
+        likes: isLiked ? (comment.likes || 0) + 1 : Math.max(0, (comment.likes || 0) - 1)
       };
       
       setComments(comments.map(c => c.id === commentId ? updatedComment : c));
@@ -177,16 +322,31 @@ export const PostDetailScreen: React.FC = () => {
         content: commentText.trim(),
       });
       
-      setComments([newComment, ...comments]);
-      addComment(newComment);
+      // Format new comment
+      const formattedComment = {
+        ...newComment,
+        user_name: user.email?.split('@')[0] || 'You',
+        user_avatar: null,
+        liked_by_user: false,
+        likes: 0,
+        replies: [],
+      };
+      
+      setComments([formattedComment, ...comments]);
+      addComment(formattedComment);
       setCommentText('');
+      
+      // Update post comment count
+      if (post) {
+        setPost({ ...post, comments: post.comments + 1 });
+      }
     } catch (error) {
       console.error('Error creating comment:', error);
       Alert.alert('Error', 'Failed to post comment. Please try again.');
     } finally {
       setSubmittingComment(false);
     }
-  }, [user, commentText, postId, comments, addComment]);
+  }, [user, commentText, postId, comments, addComment, post]);
 
   // Handle delete comment
   const handleDeleteComment = useCallback(async (commentId: string) => {
@@ -194,12 +354,18 @@ export const PostDetailScreen: React.FC = () => {
       await deleteComment(commentId);
       deleteCommentFromStore(commentId);
       setComments(comments.filter(c => c.id !== commentId));
+      
+      // Update post comment count
+      if (post) {
+        setPost({ ...post, comments: Math.max(0, post.comments - 1) });
+      }
+      
       Alert.alert('Success', 'Comment deleted successfully');
     } catch (error) {
       console.error('Error deleting comment:', error);
       Alert.alert('Error', 'Failed to delete comment. Please try again.');
     }
-  }, [deleteComment, deleteCommentFromStore, comments]);
+  }, [deleteCommentFromStore, comments, post]);
 
   // Handle reply submission
   const handleSubmitReply = useCallback(async (commentId: string) => {
@@ -214,12 +380,21 @@ export const PostDetailScreen: React.FC = () => {
         content: replyText.trim(),
       });
       
+      // Format new reply
+      const formattedReply = {
+        ...newReply,
+        user_name: user.email?.split('@')[0] || 'You',
+        user_avatar: null,
+        liked_by_user: false,
+        likes: 0,
+      };
+      
       // Update local state
       setComments(comments.map(comment => 
         comment.id === commentId 
           ? { 
               ...comment, 
-              replies: [newReply, ...comment.replies] 
+              replies: [...(comment.replies || []), formattedReply] 
             } 
           : comment
       ));
@@ -268,12 +443,12 @@ export const PostDetailScreen: React.FC = () => {
       // Update local state
       setComments(comments.map(comment => ({
         ...comment,
-        replies: comment.replies.map(reply => 
+        replies: (comment.replies || []).map(reply => 
           reply.id === replyId 
             ? { 
                 ...reply, 
                 liked_by_user: isLiked,
-                likes: isLiked ? reply.likes + 1 : reply.likes - 1
+                likes: isLiked ? (reply.likes || 0) + 1 : Math.max(0, (reply.likes || 0) - 1)
               } 
             : reply
         )
@@ -294,7 +469,7 @@ export const PostDetailScreen: React.FC = () => {
         comment.id === commentId 
           ? { 
               ...comment, 
-              replies: comment.replies.filter(reply => reply.id !== replyId) 
+              replies: (comment.replies || []).filter(reply => reply.id !== replyId) 
             } 
           : comment
       ));
@@ -356,8 +531,6 @@ export const PostDetailScreen: React.FC = () => {
           text: 'Delete', 
           onPress: async () => {
             try {
-              // Import deletePost here to avoid circular dependency
-              const { deletePost } = await import('../../services/communityService');
               await deletePost(postId);
               Alert.alert('Success', 'Post deleted successfully');
               navigation.goBack();
@@ -515,7 +688,7 @@ export const PostDetailScreen: React.FC = () => {
           {postImagesSection}
 
           {/* Post Tags */}
-          {post.tags.length > 0 && (
+          {post.tags && post.tags.length > 0 && (
             <View style={styles.tagsContainer}>
               {post.tags.map((tag, index) => (
                 <View key={index} style={styles.tag}>
@@ -567,7 +740,7 @@ export const PostDetailScreen: React.FC = () => {
                     comment={comment}
                     onLike={() => handleLikeComment(comment.id)}
                     onDelete={() => handleDeleteComment(comment.id)}
-                    onReply={(content) => handleSubmitReply(comment.id)}
+                    onReply={() => setReplyingTo(comment.id)}
                     onReplyLike={(replyId) => handleLikeReply(replyId)}
                     onReplyDelete={(replyId) => handleDeleteReply(comment.id, replyId)}
                     isAuthor={comment.user_id === user?.id}
@@ -595,6 +768,13 @@ export const PostDetailScreen: React.FC = () => {
                           ]}
                         >
                           <Ionicons name="sparkles" size={16} color="#6366F1" />
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          onPress={() => setReplyingTo(null)}
+                          style={styles.cancelReplyButton}
+                        >
+                          <Ionicons name="close" size={16} color="#6B7280" />
                         </TouchableOpacity>
                         
                         <TouchableOpacity
@@ -928,6 +1108,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     marginTop: 8,
+    marginLeft: 40,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
@@ -942,12 +1123,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginRight: 8,
     maxHeight: 80,
+    backgroundColor: '#FFFFFF',
   },
   replyActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   aiReplyButton: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    padding: 8,
+    marginRight: 8,
+  },
+  cancelReplyButton: {
     backgroundColor: '#F3F4F6',
     borderRadius: 16,
     padding: 8,
