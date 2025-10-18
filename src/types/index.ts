@@ -24,6 +24,11 @@ export interface User {
   id: string;
   email: string;
   created_at: string;
+  user_metadata?: {
+    full_name?: string;
+    learning_style?: string;
+    subjects?: string[];
+  };
 }
 
 // Auth state in our store
@@ -312,6 +317,36 @@ export interface AIWeeklySummary {
   nextWeekFocus: string[];
 }
 
+// Community Feed types
+export interface CommunityPost {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  title: string;
+  content: string;
+  image_url: string | null;
+  tags: string[];
+  likes: number;
+  comments: number;
+  liked_by_user: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Comment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  content: string;
+  likes: number;
+  liked_by_user: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // Props for navigation screens
 export type AuthStackParamList = {
   Splash: undefined;
@@ -342,4 +377,10 @@ export type AppStackParamList = {
   AISchedule: undefined;
   AIGoal: undefined;
   AIWeeklySummary: undefined;
+  // Community screens
+  Community: undefined;
+  CreatePost: undefined;
+  PostDetail: { postId: string };
+  EditPost: { postId: string };
+  Profile: { userId: string };
 };

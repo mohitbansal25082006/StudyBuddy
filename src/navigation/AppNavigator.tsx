@@ -28,6 +28,13 @@ import { AIScheduleScreen } from '../screens/calendar/ai/AIScheduleScreen';
 import { AIGoalScreen } from '../screens/calendar/ai/AIGoalScreen';
 import { AIWeeklySummaryScreen } from '../screens/calendar/ai/AIWeeklySummaryScreen';
 
+// Community Screens
+import { CommunityScreen } from '../screens/community/CommunityScreen';
+import { CreatePostScreen } from '../screens/community/CreatePostScreen';
+import { PostDetailScreen } from '../screens/community/PostDetailScreen';
+import { EditPostScreen } from '../screens/community/EditPostScreen';
+import { ProfileScreen } from '../screens/community/ProfileScreen';
+
 // Types & Store
 import { AppStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
@@ -89,6 +96,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
   const getIcon = (tabName: string): string => {
     const iconMap: { [key: string]: string } = {
       'Home': '🏠',
+      'Community': '👥',
       'Subjects': '📖',
       'StudyPlan': '📚',
       'Flashcards': '🗂️',
@@ -102,6 +110,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
   const getShortLabel = (tabName: string): string => {
     const labelMap: { [key: string]: string } = {
       'Home': 'Home',
+      'Community': 'Community',
       'Subjects': 'Subjects',
       'StudyPlan': 'Plan',
       'Flashcards': 'Cards',
@@ -155,6 +164,13 @@ const TabNavigator: React.FC = () => {
         component={HomeScreen}
         options={{
           title: 'Home',
+        }}
+      />
+      <Tab.Screen 
+        name="Community" 
+        component={CommunityScreen}
+        options={{
+          title: 'Community',
         }}
       />
       <Tab.Screen 
@@ -238,6 +254,36 @@ export const AppNavigator: React.FC = () => {
       <Stack.Screen 
         name="Main" 
         component={TabNavigator} 
+      />
+      
+      {/* Community Screens */}
+      <Stack.Screen 
+        name="CreatePost" 
+        component={CreatePostScreen} 
+        options={{
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen 
+        name="PostDetail" 
+        component={PostDetailScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      <Stack.Screen 
+        name="EditPost" 
+        component={EditPostScreen} 
+        options={{
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen 
+        name="Profile" 
+        component={ProfileScreen} 
+        options={{
+          presentation: 'card',
+        }}
       />
       
       {/* Study Plan Screens */}

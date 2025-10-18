@@ -1037,3 +1037,237 @@ export const getRecommendedStudyPlans = async (userId: string, limit: number = 5
     return [];
   }
 };
+
+// ============================================
+// COMMUNITY FEED HELPER FUNCTIONS
+// ============================================
+
+// Get community posts
+export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      post_likes:user_id!post_likes(user_id)
+    `)
+    .neq('user_id', userId) // Exclude user's own posts
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw error;
+  return data;
+};
+
+// Get a single community post with comments
+export const getCommunityPostWithComments = async (postId: string, userId: string) => {
+  // Get the post
+  const { data: post, error: postError } = await supabase
+    .from('community_posts')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      post_likes:user_id!post_likes(user_id)
+    `)
+    .eq('id', postId)
+    .single();
+
+  if (postError) throw postError;
+
+  // Get comments for the post
+  const { data: comments, error: commentsError } = await supabase
+    .from('post_comments')
+    .select(`
+      *,
+      profiles:user_id (
+        full_name,
+        avatar_url
+      ),
+      comment_likes:user_id!comment_likes(user_id)
+    `)
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+
+  if (commentsError) throw commentsError;
+
+  return { post, comments };
+};
+
+// Create a new community post
+export const createCommunityPost = async (post: any) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .insert({
+      ...post,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Update a community post
+export const updateCommunityPost = async (postId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('community_posts')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', postId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Delete a community post
+export const deleteCommunityPost = async (postId: string) => {
+  const { error } = await supabase
+    .from('community_posts')
+    .delete()
+    .eq('id', postId);
+
+  if (error) throw error;
+  return true;
+};
+
+// Like or unlike a community post
+export const toggleCommunityPostLike = async (postId: string, userId: string) => {
+  // Check if user already liked the post
+  const { data: existingLike } = await supabase
+    .from('post_likes')
+    .select('*')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .single();
+
+  if (existingLike) {
+    // User already liked, so unlike
+    const { error } = await supabase
+      .from('post_likes')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return false;
+  } else {
+    // User hasn't liked, so like
+    const { error } = await supabase
+      .from('post_likes')
+      .insert({
+        post_id: postId,
+        user_id: userId
+      });
+
+    if (error) throw error;
+    return true;
+  }
+};
+
+// Create a comment on a community post
+export const createPostComment = async (comment: any) => {
+  const { data, error } = await supabase
+    .from('post_comments')
+    .insert({
+      ...comment,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+// Like or unlike a comment
+export const toggleCommentLike = async (commentId: string, userId: string) => {
+  // Check if user already liked the comment
+  const { data: existingLike } = await supabase
+    .from('comment_likes')
+    .select('*')
+    .eq('comment_id', commentId)
+    .eq('user_id', userId)
+    .single();
+
+  if (existingLike) {
+    // User already liked, so unlike
+    const { error } = await supabase
+      .from('comment_likes')
+      .delete()
+      .eq('comment_id', commentId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    return false;
+  } else {
+    // User hasn't liked, so like
+    const { error } = await supabase
+      .from('comment_likes')
+      .insert({
+        comment_id: commentId,
+        user_id: userId
+      });
+
+    if (error) throw error;
+    return true;
+  }
+};
+
+// Upload post image
+export const uploadPostImage = async (userId: string, uri: string) => {
+  try {
+    // Get file extension from URI
+    const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+    const fileName = `${userId}/post-${Date.now()}.${fileExt}`;
+
+    // Fetch the image as a blob
+    const response = await fetch(uri);
+    const blob = await response.blob();
+
+    // Convert blob to ArrayBuffer
+    const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (reader.result instanceof ArrayBuffer) {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to convert blob to ArrayBuffer'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('community-images')
+      .upload(fileName, arrayBuffer, {
+        contentType: `image/${fileExt}`,
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (error) throw error;
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('community-images')
+      .getPublicUrl(fileName);
+
+    return publicUrlData.publicUrl;
+  } catch (error) {
+    console.error('Error uploading post image:', error);
+    throw error;
+  }
+};

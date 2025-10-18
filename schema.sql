@@ -1,7 +1,7 @@
 -- F:\StudyBuddy\complete_schema.sql
 -- ============================================
 -- STUDYBUDDY COMPLETE DATABASE SCHEMA
--- Combines Part 1 (Authentication & Profiles) and Part 2 (Study Features)
+-- Combines Authentication & Profiles, Study Features, and Community Features
 -- ============================================
 
 -- Enable UUID extension (for generating unique IDs)
@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
 -- PROFILES TABLE
--- Stores user profile information (from Part 1)
+-- Stores user profile information
 -- ============================================
 DO $$ 
 BEGIN
@@ -172,6 +172,61 @@ CREATE TABLE IF NOT EXISTS study_plan_preferences (
 );
 
 -- ============================================
+-- COMMUNITY POSTS TABLE
+-- Stores community posts
+-- ============================================
+CREATE TABLE IF NOT EXISTS community_posts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    image_url TEXT,
+    tags TEXT[], -- Array of tags
+    likes_count INTEGER DEFAULT 0,
+    comments_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- POST LIKES TABLE
+-- Stores likes on community posts
+-- ============================================
+CREATE TABLE IF NOT EXISTS post_likes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID REFERENCES community_posts(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(post_id, user_id) -- Ensure a user can only like a post once
+);
+
+-- ============================================
+-- POST COMMENTS TABLE
+-- Stores comments on community posts
+-- ============================================
+CREATE TABLE IF NOT EXISTS post_comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    post_id UUID REFERENCES community_posts(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    likes_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
+-- COMMENT LIKES TABLE
+-- Stores likes on comments
+-- ============================================
+CREATE TABLE IF NOT EXISTS comment_likes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    comment_id UUID REFERENCES post_comments(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(comment_id, user_id) -- Ensure a user can only like a comment once
+);
+
+-- ============================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- These control who can read/write data
 -- ============================================
@@ -182,6 +237,10 @@ ALTER TABLE flashcards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE study_plan_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE community_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE comment_likes ENABLE ROW LEVEL SECURITY;
 
 -- Study plans policies
 DO $$ 
@@ -460,6 +519,208 @@ BEGIN
     END IF;
 END $$;
 
+-- Community posts policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all community posts' 
+        AND tablename = 'community_posts'
+    ) THEN
+        CREATE POLICY "Users can view all community posts"
+            ON community_posts
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own community posts' 
+        AND tablename = 'community_posts'
+    ) THEN
+        CREATE POLICY "Users can insert own community posts"
+            ON community_posts
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can update own community posts' 
+        AND tablename = 'community_posts'
+    ) THEN
+        CREATE POLICY "Users can update own community posts"
+            ON community_posts
+            FOR UPDATE
+            USING (auth.uid() = user_id)
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own community posts' 
+        AND tablename = 'community_posts'
+    ) THEN
+        CREATE POLICY "Users can delete own community posts"
+            ON community_posts
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Post likes policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all post likes' 
+        AND tablename = 'post_likes'
+    ) THEN
+        CREATE POLICY "Users can view all post likes"
+            ON post_likes
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own post likes' 
+        AND tablename = 'post_likes'
+    ) THEN
+        CREATE POLICY "Users can insert own post likes"
+            ON post_likes
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own post likes' 
+        AND tablename = 'post_likes'
+    ) THEN
+        CREATE POLICY "Users can delete own post likes"
+            ON post_likes
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Post comments policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all post comments' 
+        AND tablename = 'post_comments'
+    ) THEN
+        CREATE POLICY "Users can view all post comments"
+            ON post_comments
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own post comments' 
+        AND tablename = 'post_comments'
+    ) THEN
+        CREATE POLICY "Users can insert own post comments"
+            ON post_comments
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can update own post comments' 
+        AND tablename = 'post_comments'
+    ) THEN
+        CREATE POLICY "Users can update own post comments"
+            ON post_comments
+            FOR UPDATE
+            USING (auth.uid() = user_id)
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own post comments' 
+        AND tablename = 'post_comments'
+    ) THEN
+        CREATE POLICY "Users can delete own post comments"
+            ON post_comments
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- Comment likes policies
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can view all comment likes' 
+        AND tablename = 'comment_likes'
+    ) THEN
+        CREATE POLICY "Users can view all comment likes"
+            ON comment_likes
+            FOR SELECT
+            USING (true);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can insert own comment likes' 
+        AND tablename = 'comment_likes'
+    ) THEN
+        CREATE POLICY "Users can insert own comment likes"
+            ON comment_likes
+            FOR INSERT
+            WITH CHECK (auth.uid() = user_id);
+    END IF;
+END $$;
+
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE policyname = 'Users can delete own comment likes' 
+        AND tablename = 'comment_likes'
+    ) THEN
+        CREATE POLICY "Users can delete own comment likes"
+            ON comment_likes
+            FOR DELETE
+            USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
 -- ============================================
 -- FUNCTION: Auto-create profile on signup
 -- ============================================
@@ -529,6 +790,50 @@ CREATE POLICY "Users can delete own avatar"
     );
 
 -- ============================================
+-- STORAGE BUCKET for Community Images
+-- ============================================
+
+-- Create storage bucket for community images if it doesn't exist
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('community-images', 'community-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Drop existing policies and recreate them
+DROP POLICY IF EXISTS "Community images are publicly accessible" ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload own community images" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update own community images" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own community images" ON storage.objects;
+
+-- Policy: Anyone can view community images
+CREATE POLICY "Community images are publicly accessible"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'community-images');
+
+-- Policy: Users can upload their own community images
+CREATE POLICY "Users can upload own community images"
+    ON storage.objects FOR INSERT
+    WITH CHECK (
+        bucket_id = 'community-images' AND
+        auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+-- Policy: Users can update their own community images
+CREATE POLICY "Users can update own community images"
+    ON storage.objects FOR UPDATE
+    USING (
+        bucket_id = 'community-images' AND
+        auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+-- Policy: Users can delete their own community images
+CREATE POLICY "Users can delete own community images"
+    ON storage.objects FOR DELETE
+    USING (
+        bucket_id = 'community-images' AND
+        auth.uid()::text = (storage.foldername(name))[1]
+    );
+
+-- ============================================
 -- INDEXES for better performance
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_study_plans_user_id ON study_plans(user_id);
@@ -541,6 +846,15 @@ CREATE INDEX IF NOT EXISTS idx_study_sessions_subject ON study_sessions(subject)
 CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time);
 CREATE INDEX IF NOT EXISTS idx_study_plan_preferences_user_id ON study_plan_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_community_posts_user_id ON community_posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_community_posts_created_at ON community_posts(created_at);
+CREATE INDEX IF NOT EXISTS idx_community_posts_tags ON community_posts USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON post_likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_likes_user_id ON post_likes(user_id);
+CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_comments_user_id ON post_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_user_id ON comment_likes(user_id);
 
 -- ============================================
 -- COMMENTS for documentation
@@ -551,9 +865,13 @@ COMMENT ON TABLE study_sessions IS 'Tracks user study sessions';
 COMMENT ON TABLE calendar_events IS 'Calendar events for study sessions';
 COMMENT ON TABLE study_plan_categories IS 'Lookup table for study plan categories';
 COMMENT ON TABLE study_plan_preferences IS 'User-specific study plan preferences';
+COMMENT ON TABLE community_posts IS 'Community posts for sharing study tips and resources';
+COMMENT ON TABLE post_likes IS 'Likes on community posts';
+COMMENT ON TABLE post_comments IS 'Comments on community posts';
+COMMENT ON TABLE comment_likes IS 'Likes on comments';
 
 -- ============================================
--- UPDATE TRIGGER FUNCTION for profiles
+-- UPDATE TRIGGER FUNCTION for updated_at columns
 -- ============================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -583,5 +901,89 @@ CREATE TRIGGER update_study_plan_preferences_updated_at
     BEFORE UPDATE ON study_plan_preferences
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Create update trigger for community_posts
+DROP TRIGGER IF EXISTS update_community_posts_updated_at ON community_posts;
+CREATE TRIGGER update_community_posts_updated_at
+    BEFORE UPDATE ON community_posts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create update trigger for post_comments
+DROP TRIGGER IF EXISTS update_post_comments_updated_at ON post_comments;
+CREATE TRIGGER update_post_comments_updated_at
+    BEFORE UPDATE ON post_comments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- FUNCTIONS for updating counts
+-- ============================================
+
+-- Function to update post likes count
+CREATE OR REPLACE FUNCTION update_post_likes_count()
+RETURNS TRIGGER AS $$ 
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE community_posts SET likes_count = likes_count + 1 WHERE id = NEW.post_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE community_posts SET likes_count = likes_count - 1 WHERE id = OLD.post_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for post likes
+DROP TRIGGER IF EXISTS post_likes_count_trigger ON post_likes;
+CREATE TRIGGER post_likes_count_trigger
+    AFTER INSERT OR DELETE ON post_likes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_post_likes_count();
+
+-- Function to update post comments count
+CREATE OR REPLACE FUNCTION update_post_comments_count()
+RETURNS TRIGGER AS $$ 
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE community_posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE community_posts SET comments_count = comments_count - 1 WHERE id = OLD.post_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for post comments
+DROP TRIGGER IF EXISTS post_comments_count_trigger ON post_comments;
+CREATE TRIGGER post_comments_count_trigger
+    AFTER INSERT OR DELETE ON post_comments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_post_comments_count();
+
+-- Function to update comment likes count
+CREATE OR REPLACE FUNCTION update_comment_likes_count()
+RETURNS TRIGGER AS $$ 
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE post_comments SET likes_count = likes_count + 1 WHERE id = NEW.comment_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE post_comments SET likes_count = likes_count - 1 WHERE id = OLD.comment_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger for comment likes
+DROP TRIGGER IF EXISTS comment_likes_count_trigger ON comment_likes;
+CREATE TRIGGER comment_likes_count_trigger
+    AFTER INSERT OR DELETE ON comment_likes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_comment_likes_count();
 
 RAISE NOTICE 'StudyBuddy database schema setup completed successfully!';
