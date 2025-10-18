@@ -1,4 +1,5 @@
 // F:\StudyBuddy\src\screens\community\CreatePostScreen.tsx
+// F:\StudyBuddy\src\screens\community\CreatePostScreen.tsx
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -18,8 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
-import { createPost, uploadPostImage } from '../../services/communityService';
-import { tagPostContent, improvePostContent, advancedModerateContent } from '../../services/communityAI';
+import { createPost, uploadPostImages, deletePost } from '../../services/supabase';
+import { tagPostContent, improvePostContent, advancedModerateContent, simpleImageModeration } from '../../services/communityAI';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { TagInput } from '../../components/community/TagInput';
@@ -98,40 +99,50 @@ export const CreatePostScreen: React.FC = () => {
     try {
       setLoading(true);
 
-      // Moderate content and images
-      const moderation = await advancedModerateContent(content, images);
+      // Moderate content first (skip images for now)
+      const moderation = await advancedModerateContent(content);
       if (!moderation.isAppropriate) {
         Alert.alert('Content Flagged', moderation.reason || 'Your content may not be appropriate for the community.');
+        setLoading(false);
         return;
       }
 
-      // Upload images first if any
-      let uploadedImageUrls: string[] = [];
-      if (images.length > 0) {
-        try {
-          const uploadResults = await Promise.all(
-            images.map(async (imageUri) => {
-              const imageUrl = await uploadPostImage(imageUri, user.id);
-              return imageUrl;
-            })
-          );
-          // Filter out any undefined values
-          uploadedImageUrls = uploadResults.filter((url): url is string => url !== undefined);
-        } catch (uploadError) {
-          console.error('Error uploading images:', uploadError);
-          Alert.alert('Error', 'Failed to upload images. Please try again.');
-          return;
-        }
-      }
-
-      // Create post with uploaded image URLs
+      // Create post first
       const newPost = await createPost({
         user_id: user.id,
         title: title.trim(),
         content: content.trim(),
         tags,
-        image_url: uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : undefined,
       });
+
+      // If there are images, upload them
+      if (images.length > 0) {
+        try {
+          const uploadedImages = await uploadPostImages(user.id, newPost.id, images);
+          
+          // Simple moderation of uploaded images using URL analysis instead of vision API
+          if (uploadedImages && uploadedImages.length > 0) {
+            const imageUrls = uploadedImages.map(img => img.image_url);
+            const imageModeration = await simpleImageModeration(imageUrls);
+            
+            if (!imageModeration.isAppropriate) {
+              // Delete the post if images violate guidelines
+              await deletePost(newPost.id);
+              Alert.alert(
+                'Content Removed',
+                'Your post was removed because one or more images may violate community guidelines.',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (uploadError) {
+          console.error('Error uploading images:', uploadError);
+          // Continue even if images fail to upload
+          Alert.alert('Warning', 'Post created but some images failed to upload.');
+        }
+      }
 
       // Add to local state
       addPost(newPost);

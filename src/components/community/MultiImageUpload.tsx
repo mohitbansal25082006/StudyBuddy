@@ -1,4 +1,5 @@
 // F:\StudyBuddy\src\components\community\MultiImageUpload.tsx
+// F:\StudyBuddy\src\components\community\MultiImageUpload.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -23,6 +24,8 @@ export const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
   onChange,
   maxImages = 5,
 }) => {
+  const [uploading, setUploading] = useState(false);
+
   const handleSelectImage = async () => {
     if (images.length >= maxImages) {
       Alert.alert('Limit Reached', `You can only add up to ${maxImages} images.`);
@@ -30,6 +33,13 @@ export const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
     }
 
     try {
+      // Request permission first
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'We need camera roll permissions to select images.');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -37,8 +47,12 @@ export const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets[0].uri) {
-        onChange([...images, result.assets[0].uri]);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        // Check if the image is valid
+        const asset = result.assets[0];
+        if (asset.uri) {
+          onChange([...images, asset.uri]);
+        }
       }
     } catch (error) {
       console.error('Error selecting image:', error);
@@ -114,9 +128,19 @@ export const MultiImageUpload: React.FC<MultiImageUploadProps> = ({
         <TouchableOpacity
           onPress={handleSelectImage}
           style={styles.addImageButton}
+          disabled={uploading}
         >
-          <Ionicons name="image" size={24} color="#9CA3AF" />
-          <Text style={styles.addImageText}>Add Image</Text>
+          {uploading ? (
+            <>
+              <Ionicons name="hourglass-outline" size={24} color="#9CA3AF" />
+              <Text style={styles.addImageText}>Uploading...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="image" size={24} color="#9CA3AF" />
+              <Text style={styles.addImageText}>Add Image</Text>
+            </>
+          )}
         </TouchableOpacity>
       )}
       

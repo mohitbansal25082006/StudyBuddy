@@ -1,4 +1,5 @@
 // F:\StudyBuddy\src\services\supabase.ts
+// F:\StudyBuddy\src\services\supabase.ts
 // ============================================
 // SUPABASE CLIENT CONFIGURATION
 // This connects our app to Supabase
@@ -1147,7 +1148,7 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
   return { post, comments: processedComments };
 };
 
-// Create a new community post
+// Create a new community post - FIXED VERSION
 export const createCommunityPost = async (post: any, imageUris?: string[]) => {
   // Create the post first
   const { data: newPost, error: postError } = await supabase
@@ -1294,8 +1295,8 @@ export const deleteComment = async (commentId: string) => {
   return true;
 };
 
-// Upload post image
-export const uploadPostImage = async (userId: string, uri: string) => {
+// Upload post image - FIXED VERSION
+export const uploadPostImage = async (uri: string, userId: string) => {
   try {
     // Get file extension from URI
     const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
@@ -1328,7 +1329,10 @@ export const uploadPostImage = async (userId: string, uri: string) => {
         upsert: true,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Upload error:', error);
+      throw error;
+    }
 
     // Get public URL
     const { data: publicUrlData } = supabase.storage
@@ -1568,7 +1572,7 @@ export const getPostImages = async (postId: string) => {
   return data;
 };
 
-// Upload multiple images for a post
+// Upload multiple images for a post - FIXED VERSION
 export const uploadPostImages = async (userId: string, postId: string, uris: string[]) => {
   const uploadedImages = [];
   
