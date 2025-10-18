@@ -78,18 +78,12 @@ CREATE TABLE IF NOT EXISTS study_plans (
     duration_weeks INTEGER,
     daily_hours INTEGER,
     plan_data JSONB, -- Stores the structured study plan
+    public BOOLEAN DEFAULT false,
+    rating FLOAT DEFAULT 0,
+    completed BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Add public column to study_plans table if it doesn't exist
-ALTER TABLE study_plans ADD COLUMN IF NOT EXISTS public BOOLEAN DEFAULT false;
-
--- Add rating column to study_plans table if it doesn't exist
-ALTER TABLE study_plans ADD COLUMN IF NOT EXISTS rating FLOAT DEFAULT 0;
-
--- Add completed column to study_plans table if it doesn't exist
-ALTER TABLE study_plans ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT false;
 
 -- ============================================
 -- FLASHCARDS TABLE
@@ -116,15 +110,13 @@ CREATE TABLE IF NOT EXISTS flashcards (
 CREATE TABLE IF NOT EXISTS study_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    study_plan_id UUID REFERENCES study_plans(id) ON DELETE SET NULL,
     subject TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL,
     session_type TEXT CHECK (session_type IN ('study_plan', 'flashcards', 'review')),
     completed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     notes TEXT
 );
-
--- Add study_plan_id column to study_sessions table if it doesn't exist
-ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS study_plan_id UUID REFERENCES study_plans(id) ON DELETE SET NULL;
 
 -- ============================================
 -- CALENDAR EVENTS TABLE
@@ -922,7 +914,7 @@ CREATE TRIGGER update_post_comments_updated_at
 
 -- Function to update post likes count
 CREATE OR REPLACE FUNCTION update_post_likes_count()
-RETURNS TRIGGER AS $$ 
+RETURNS TRIGGER AS $ 
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE community_posts SET likes_count = likes_count + 1 WHERE id = NEW.post_id;
@@ -933,7 +925,7 @@ BEGIN
     END IF;
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create trigger for post likes
 DROP TRIGGER IF EXISTS post_likes_count_trigger ON post_likes;
@@ -944,7 +936,7 @@ CREATE TRIGGER post_likes_count_trigger
 
 -- Function to update post comments count
 CREATE OR REPLACE FUNCTION update_post_comments_count()
-RETURNS TRIGGER AS $$ 
+RETURNS TRIGGER AS $ 
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE community_posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
@@ -955,7 +947,7 @@ BEGIN
     END IF;
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create trigger for post comments
 DROP TRIGGER IF EXISTS post_comments_count_trigger ON post_comments;
@@ -966,7 +958,7 @@ CREATE TRIGGER post_comments_count_trigger
 
 -- Function to update comment likes count
 CREATE OR REPLACE FUNCTION update_comment_likes_count()
-RETURNS TRIGGER AS $$ 
+RETURNS TRIGGER AS $ 
 BEGIN
     IF TG_OP = 'INSERT' THEN
         UPDATE post_comments SET likes_count = likes_count + 1 WHERE id = NEW.comment_id;
@@ -977,7 +969,7 @@ BEGIN
     END IF;
     RETURN NULL;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 -- Create trigger for comment likes
 DROP TRIGGER IF EXISTS comment_likes_count_trigger ON comment_likes;
@@ -986,4 +978,10 @@ CREATE TRIGGER comment_likes_count_trigger
     FOR EACH ROW
     EXECUTE FUNCTION update_comment_likes_count();
 
-RAISE NOTICE 'StudyBuddy database schema setup completed successfully!';
+-- ============================================
+-- FINAL SUCCESS MESSAGE
+-- ============================================
+DO $ 
+BEGIN
+    RAISE NOTICE 'StudyBuddy database schema setup completed successfully!';
+END $;

@@ -12,6 +12,7 @@ import {
   Platform,
   TextInput,
   Alert,
+  SafeAreaView,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -198,185 +199,193 @@ export const PostDetailScreen: React.FC = () => {
 
   if (!post) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Post not found</Text>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Post not found</Text>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#6366F1']}
-          />
-        }
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Post Header */}
-        <View style={styles.postHeader}>
-          <TouchableOpacity style={styles.authorInfo} onPress={handleProfilePress}>
-            <Image
-              source={{ uri: getAvatarUrl(post.user_avatar, post.user_name, post.user_id) }}
-              style={styles.authorAvatar}
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#6366F1']}
             />
-            <View style={styles.authorDetails}>
-              <Text style={styles.authorName}>{post.user_name}</Text>
-              <Text style={styles.postDate}>
-                {new Date(post.created_at).toLocaleDateString()}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          
-          {post.user_id === user?.id && (
-            <TouchableOpacity
-              onPress={handleEditPost}
-              style={styles.optionsButton}
-            >
-              <Ionicons name="ellipsis-vertical" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Post Title */}
-        <Text style={styles.postTitle}>{post.title}</Text>
-
-        {/* Post Content */}
-        <Text style={styles.postContent}>{post.content}</Text>
-
-        {/* Post Image */}
-        {post.image_url && (
-          <Image source={{ uri: post.image_url }} style={styles.postImage} />
-        )}
-
-        {/* Post Tags */}
-        {post.tags.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {post.tags.map((tag, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Post Actions */}
-        <View style={styles.postActions}>
-          <TouchableOpacity
-            onPress={handleLikePost}
-            style={styles.actionButton}
-          >
-            <Ionicons
-              name={post.liked_by_user ? "heart" : "heart-outline"}
-              size={20}
-              color={post.liked_by_user ? "#EF4444" : "#6B7280"}
-            />
-            <Text style={styles.actionText}>{post.likes}</Text>
-          </TouchableOpacity>
-          
-          <View style={styles.actionButton}>
-            <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
-            <Text style={styles.actionText}>{post.comments}</Text>
-          </View>
-        </View>
-
-        {/* Comments Section */}
-        <View style={styles.commentsSection}>
-          <Text style={styles.commentsTitle}>Comments ({comments.length})</Text>
-          
-          {comments.length === 0 ? (
-            <View style={styles.noComments}>
-              <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
-            </View>
-          ) : (
-            comments.map((comment) => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
-                onLike={() => handleLikeComment(comment.id)}
-                onDelete={() => {
-                  // Handle delete comment
-                  Alert.alert(
-                    'Delete Comment',
-                    'Are you sure you want to delete this comment?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { 
-                        text: 'Delete', 
-                        onPress: () => {
-                          // This would call the deleteComment function
-                          // For now, we'll just show an alert
-                          Alert.alert('Deleted', 'Comment deleted successfully');
-                        }, 
-                        style: 'destructive' 
-                      },
-                    ]
-                  );
-                }}
-                isAuthor={comment.user_id === user?.id}
+          }
+        >
+          {/* Post Header */}
+          <View style={styles.postHeader}>
+            <TouchableOpacity style={styles.authorInfo} onPress={handleProfilePress}>
+              <Image
+                source={{ uri: getAvatarUrl(post.user_avatar, post.user_name, post.user_id) }}
+                style={styles.authorAvatar}
               />
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Comment Input */}
-      <View style={styles.commentInputContainer}>
-        <TextInput
-          value={commentText}
-          onChangeText={setCommentText}
-          placeholder="Add a comment..."
-          multiline
-          style={styles.commentInput}
-        />
-        
-        <View style={styles.commentActions}>
-          <TouchableOpacity
-            onPress={handleGenerateComment}
-            disabled={aiGeneratingComment}
-            style={[
-              styles.aiCommentButton,
-              { opacity: aiGeneratingComment ? 0.5 : 1 }
-            ]}
-          >
-            <Ionicons name="sparkles" size={20} color="#6366F1" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            onPress={handleSubmitComment}
-            disabled={submittingComment || !commentText.trim()}
-            style={[
-              styles.submitButton,
-              { opacity: (submittingComment || !commentText.trim()) ? 0.5 : 1 }
-            ]}
-          >
-            {submittingComment ? (
-              <Ionicons name="hourglass-outline" size={20} color="#FFFFFF" />
-            ) : (
-              <Ionicons name="send" size={20} color="#FFFFFF" />
+              <View style={styles.authorDetails}>
+                <Text style={styles.authorName}>{post.user_name}</Text>
+                <Text style={styles.postDate}>
+                  {new Date(post.created_at).toLocaleDateString()}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            
+            {post.user_id === user?.id && (
+              <TouchableOpacity
+                onPress={handleEditPost}
+                style={styles.optionsButton}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color="#6B7280" />
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
+
+          {/* Post Title */}
+          <Text style={styles.postTitle}>{post.title}</Text>
+
+          {/* Post Content */}
+          <Text style={styles.postContent}>{post.content}</Text>
+
+          {/* Post Image */}
+          {post.image_url && (
+            <Image source={{ uri: post.image_url }} style={styles.postImage} />
+          )}
+
+          {/* Post Tags */}
+          {post.tags.length > 0 && (
+            <View style={styles.tagsContainer}>
+              {post.tags.map((tag, index) => (
+                <View key={index} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Post Actions */}
+          <View style={styles.postActions}>
+            <TouchableOpacity
+              onPress={handleLikePost}
+              style={styles.actionButton}
+            >
+              <Ionicons
+                name={post.liked_by_user ? "heart" : "heart-outline"}
+                size={20}
+                color={post.liked_by_user ? "#EF4444" : "#6B7280"}
+              />
+              <Text style={styles.actionText}>{post.likes}</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.actionButton}>
+              <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
+              <Text style={styles.actionText}>{post.comments}</Text>
+            </View>
+          </View>
+
+          {/* Comments Section */}
+          <View style={styles.commentsSection}>
+            <Text style={styles.commentsTitle}>Comments ({comments.length})</Text>
+            
+            {comments.length === 0 ? (
+              <View style={styles.noComments}>
+                <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
+              </View>
+            ) : (
+              comments.map((comment) => (
+                <CommentItem
+                  key={comment.id}
+                  comment={comment}
+                  onLike={() => handleLikeComment(comment.id)}
+                  onDelete={() => {
+                    // Handle delete comment
+                    Alert.alert(
+                      'Delete Comment',
+                      'Are you sure you want to delete this comment?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                          text: 'Delete', 
+                          onPress: () => {
+                            // This would call the deleteComment function
+                            // For now, we'll just show an alert
+                            Alert.alert('Deleted', 'Comment deleted successfully');
+                          }, 
+                          style: 'destructive' 
+                        },
+                      ]
+                    );
+                  }}
+                  isAuthor={comment.user_id === user?.id}
+                />
+              ))
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Comment Input */}
+        <View style={styles.commentInputContainer}>
+          <TextInput
+            value={commentText}
+            onChangeText={setCommentText}
+            placeholder="Add a comment..."
+            multiline
+            style={styles.commentInput}
+          />
+          
+          <View style={styles.commentActions}>
+            <TouchableOpacity
+              onPress={handleGenerateComment}
+              disabled={aiGeneratingComment}
+              style={[
+                styles.aiCommentButton,
+                { opacity: aiGeneratingComment ? 0.5 : 1 }
+              ]}
+            >
+              <Ionicons name="sparkles" size={20} color="#6366F1" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={handleSubmitComment}
+              disabled={submittingComment || !commentText.trim()}
+              style={[
+                styles.submitButton,
+                { opacity: (submittingComment || !commentText.trim()) ? 0.5 : 1 }
+              ]}
+            >
+              {submittingComment ? (
+                <Ionicons name="hourglass-outline" size={20} color="#FFFFFF" />
+              ) : (
+                <Ionicons name="send" size={20} color="#FFFFFF" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

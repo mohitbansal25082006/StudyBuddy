@@ -11,6 +11,8 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +39,8 @@ export const CreatePostScreen: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
+  const [showTagModal, setShowTagModal] = useState(false);
 
   // Handle image selection
   const handleSelectImage = useCallback(async () => {
@@ -73,7 +77,8 @@ export const CreatePostScreen: React.FC = () => {
       setAiLoading(true);
       const suggestedTags = await tagPostContent(content);
       setTagSuggestions(suggestedTags);
-      setShowTagSuggestions(true);
+      setSelectedSuggestions([]); // Reset selected suggestions
+      setShowTagModal(true); // Show modal with suggestions
     } catch (error) {
       console.error('Error suggesting tags:', error);
       Alert.alert('Error', 'Failed to suggest tags. Please try again.');
@@ -93,6 +98,7 @@ export const CreatePostScreen: React.FC = () => {
       setAiLoading(true);
       const improvedContent = await improvePostContent(content);
       setContent(improvedContent);
+      Alert.alert('Success', 'Content has been improved with AI!');
     } catch (error) {
       console.error('Error improving content:', error);
       Alert.alert('Error', 'Failed to improve content. Please try again.');
@@ -160,13 +166,64 @@ export const CreatePostScreen: React.FC = () => {
     }
   }, [title, content, tags, image, user, addPost, navigation]);
 
-  // Handle add tag from suggestions
-  const handleAddSuggestedTag = useCallback((tag: string) => {
-    if (!tags.includes(tag)) {
-      setTags([...tags, tag]);
+  // Handle toggle tag suggestion selection
+  const handleToggleSuggestion = useCallback((tag: string) => {
+    if (selectedSuggestions.includes(tag)) {
+      setSelectedSuggestions(selectedSuggestions.filter(t => t !== tag));
+    } else {
+      setSelectedSuggestions([...selectedSuggestions, tag]);
     }
-    setShowTagSuggestions(false);
-  }, [tags]);
+  }, [selectedSuggestions]);
+
+  // Handle add selected suggestions
+  const handleAddSelectedSuggestions = useCallback(() => {
+    // Add only the selected suggestions that aren't already in tags
+    const newTags = selectedSuggestions.filter(tag => !tags.includes(tag));
+    setTags([...tags, ...newTags]);
+    setShowTagModal(false);
+    setSelectedSuggestions([]);
+  }, [selectedSuggestions, tags]);
+
+  // Handle add all suggestions
+  const handleAddAllSuggestions = useCallback(() => {
+    // Add all suggestions that aren't already in tags
+    const newTags = tagSuggestions.filter(tag => !tags.includes(tag));
+    setTags([...tags, ...newTags]);
+    setShowTagModal(false);
+    setSelectedSuggestions([]);
+  }, [tagSuggestions, tags]);
+
+  // Render tag suggestion item
+  const renderTagSuggestion = useCallback(({ item }: { item: string }) => {
+    const isSelected = selectedSuggestions.includes(item);
+    const isAlreadyAdded = tags.includes(item);
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.suggestionItem,
+          isSelected && styles.selectedSuggestionItem,
+          isAlreadyAdded && styles.alreadyAddedSuggestionItem
+        ]}
+        onPress={() => !isAlreadyAdded && handleToggleSuggestion(item)}
+        disabled={isAlreadyAdded}
+      >
+        <Text style={[
+          styles.suggestionItemText,
+          isSelected && styles.selectedSuggestionItemText,
+          isAlreadyAdded && styles.alreadyAddedSuggestionItemText
+        ]}>
+          {item}
+        </Text>
+        {isSelected && (
+          <Ionicons name="checkmark-circle" size={20} color="#6366F1" />
+        )}
+        {isAlreadyAdded && (
+          <Ionicons name="checkmark-done" size={20} color="#10B981" />
+        )}
+      </TouchableOpacity>
+    );
+  }, [selectedSuggestions, tags, handleToggleSuggestion]);
 
   return (
     <KeyboardAvoidingView
@@ -257,20 +314,27 @@ export const CreatePostScreen: React.FC = () => {
             placeholder="Add tags (e.g., Math, Physics)"
           />
 
-          {/* Tag Suggestions */}
-          {showTagSuggestions && (
-            <View style={styles.tagSuggestions}>
-              <Text style={styles.suggestionsTitle}>Suggested Tags:</Text>
-              <View style={styles.suggestionsList}>
-                {tagSuggestions.map((tag, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    onPress={() => handleAddSuggestedTag(tag)}
-                    style={styles.suggestionTag}
-                  >
-                    <Text style={styles.suggestionTagText}>{tag}</Text>
-                  </TouchableOpacity>
+          {/* Tag Suggestions Preview */}
+          {tagSuggestions.length > 0 && !showTagModal && (
+            <View style={styles.tagSuggestionsPreview}>
+              <View style={styles.suggestionsHeader}>
+                <Text style={styles.suggestionsTitle}>AI Suggested Tags:</Text>
+                <TouchableOpacity
+                  onPress={() => setShowTagModal(true)}
+                  style={styles.viewAllButton}
+                >
+                  <Text style={styles.viewAllButtonText}>View All</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.suggestionsPreviewList}>
+                {tagSuggestions.slice(0, 3).map((tag, index) => (
+                  <View key={index} style={styles.previewTag}>
+                    <Text style={styles.previewTagText}>{tag}</Text>
+                  </View>
                 ))}
+                {tagSuggestions.length > 3 && (
+                  <Text style={styles.moreTagsText}>+{tagSuggestions.length - 3} more</Text>
+                )}
               </View>
             </View>
           )}
@@ -303,6 +367,82 @@ export const CreatePostScreen: React.FC = () => {
             <LoadingSpinner />
           </View>
         )}
+
+        {/* AI Tag Suggestions Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={showTagModal}
+          onRequestClose={() => setShowTagModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>AI Suggested Tags</Text>
+                <TouchableOpacity
+                  onPress={() => setShowTagModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <Ionicons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalSubtitle}>
+                Select the tags you want to add to your post:
+              </Text>
+
+              {aiLoading ? (
+                <View style={styles.modalLoading}>
+                  <LoadingSpinner />
+                  <Text style={styles.modalLoadingText}>Generating tags...</Text>
+                </View>
+              ) : (
+                <>
+                  <FlatList
+                    data={tagSuggestions}
+                    renderItem={renderTagSuggestion}
+                    keyExtractor={(item) => item}
+                    contentContainerStyle={styles.suggestionsList}
+                    showsVerticalScrollIndicator={false}
+                  />
+
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={styles.modalCancelButton}
+                      onPress={() => setShowTagModal(false)}
+                    >
+                      <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.modalAddAllButton,
+                        tagSuggestions.every(tag => tags.includes(tag)) && styles.disabledButton
+                      ]}
+                      onPress={handleAddAllSuggestions}
+                      disabled={tagSuggestions.every(tag => tags.includes(tag))}
+                    >
+                      <Text style={styles.modalAddAllButtonText}>Add All</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.modalAddSelectedButton,
+                        selectedSuggestions.length === 0 && styles.disabledButton
+                      ]}
+                      onPress={handleAddSelectedSuggestions}
+                      disabled={selectedSuggestions.length === 0}
+                    >
+                      <Text style={styles.modalAddSelectedButtonText}>
+                        Add Selected ({selectedSuggestions.length})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
       </View>
     </KeyboardAvoidingView>
   );
@@ -379,34 +519,57 @@ const styles = StyleSheet.create({
     color: '#6366F1',
     marginLeft: 4,
   },
-  tagSuggestions: {
+  tagSuggestionsPreview: {
     marginBottom: 16,
     padding: 12,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F0F9FF',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  suggestionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   suggestionsTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    color: '#0369A1',
   },
-  suggestionsList: {
+  viewAllButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  viewAllButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#0284C7',
+  },
+  suggestionsPreviewList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
   },
-  suggestionTag: {
-    backgroundColor: '#EBF5FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
+  previewTag: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 6,
+    marginBottom: 6,
   },
-  suggestionTagText: {
-    fontSize: 14,
+  previewTagText: {
+    fontSize: 12,
     fontWeight: '500',
-    color: '#1E40AF',
+    color: '#0C4A6E',
+  },
+  moreTagsText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+    fontStyle: 'italic',
   },
   imageContainer: {
     position: 'relative',
@@ -450,5 +613,128 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '90%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  modalLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  modalLoadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  suggestionsList: {
+    paddingBottom: 16,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  selectedSuggestionItem: {
+    backgroundColor: '#EBF5FF',
+    borderColor: '#6366F1',
+  },
+  alreadyAddedSuggestionItem: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#10B981',
+  },
+  suggestionItemText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  selectedSuggestionItemText: {
+    color: '#1E40AF',
+    fontWeight: '500',
+  },
+  alreadyAddedSuggestionItemText: {
+    color: '#047857',
+    fontWeight: '500',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  modalCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  modalCancelButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  modalAddAllButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 8,
+  },
+  modalAddAllButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  modalAddSelectedButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#6366F1',
+  },
+  modalAddSelectedButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
