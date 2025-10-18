@@ -322,11 +322,18 @@ export const PostDetailScreen: React.FC = () => {
         content: commentText.trim(),
       });
       
+      // Get user profile for the new comment
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url')
+        .eq('id', user.id)
+        .single();
+      
       // Format new comment
       const formattedComment = {
         ...newComment,
-        user_name: user.email?.split('@')[0] || 'You',
-        user_avatar: null,
+        user_name: userProfile?.full_name || user.email?.split('@')[0] || 'You',
+        user_avatar: userProfile?.avatar_url || null,
         liked_by_user: false,
         likes: 0,
         replies: [],
@@ -338,7 +345,7 @@ export const PostDetailScreen: React.FC = () => {
       
       // Update post comment count
       if (post) {
-        setPost({ ...post, comments: post.comments + 1 });
+        setPost({ ...post, comments: (post.comments || 0) + 1 });
       }
     } catch (error) {
       console.error('Error creating comment:', error);
@@ -380,11 +387,18 @@ export const PostDetailScreen: React.FC = () => {
         content: replyText.trim(),
       });
       
+      // Get user profile for the new reply
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('full_name, avatar_url')
+        .eq('id', user.id)
+        .single();
+      
       // Format new reply
       const formattedReply = {
         ...newReply,
-        user_name: user.email?.split('@')[0] || 'You',
-        user_avatar: null,
+        user_name: userProfile?.full_name || user.email?.split('@')[0] || 'You',
+        user_avatar: userProfile?.avatar_url || null,
         liked_by_user: false,
         likes: 0,
       };
