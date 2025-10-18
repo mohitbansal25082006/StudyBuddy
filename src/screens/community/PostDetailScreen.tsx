@@ -296,7 +296,7 @@ export const PostDetailScreen: React.FC = () => {
                 style={styles.optionsButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="ellipsis-vertical" size={24} color="#6B7280" />
+                <Ionicons name="ellipsis-vertical" size={20} color="#374151" />
               </TouchableOpacity>
             )}
           </View>
@@ -499,14 +499,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   optionsButton: {
-    padding: 8,
-    marginLeft: 8,
-    borderRadius: 20,
-    backgroundColor: '#F9FAFB',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 40,
-    minHeight: 40,
+    marginLeft: 8,
   },
   postTitle: {
     fontSize: 20,

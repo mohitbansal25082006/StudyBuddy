@@ -268,6 +268,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
     >
       <ScrollView 
         contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

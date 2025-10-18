@@ -243,13 +243,34 @@ export const createPost = async (post: {
 export const updatePost = async (postId: string, updates: {
   title?: string;
   content?: string;
-  image_url?: string;
+  image_url?: string | null;
   tags?: string[];
 }): Promise<CommunityPost> => {
   try {
+    // Prepare update object
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    };
+
+    // Add fields that are being updated
+    if (updates.title !== undefined) {
+      updateData.title = updates.title;
+    }
+    if (updates.content !== undefined) {
+      updateData.content = updates.content;
+    }
+    if (updates.tags !== undefined) {
+      updateData.tags = updates.tags;
+    }
+    
+    // Handle image_url specially to support null values
+    if (updates.image_url !== undefined) {
+      updateData.image_url = updates.image_url;
+    }
+
     const { data, error } = await supabase
       .from('community_posts')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', postId)
       .select()
       .single();

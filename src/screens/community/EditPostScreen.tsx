@@ -37,6 +37,7 @@ export const EditPostScreen: React.FC = () => {
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [image, setImage] = useState<string | null>(null);
+  const [imageRemoved, setImageRemoved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
@@ -67,6 +68,7 @@ export const EditPostScreen: React.FC = () => {
         setContent(postData.content);
         setTags(postData.tags);
         setImage(postData.image_url);
+        setImageRemoved(false);
       } catch (error) {
         console.error('Error loading post:', error);
         Alert.alert('Error', 'Failed to load post. Please try again.');
@@ -91,6 +93,7 @@ export const EditPostScreen: React.FC = () => {
 
       if (!result.canceled && result.assets[0].uri) {
         setImage(result.assets[0].uri);
+        setImageRemoved(false);
       }
     } catch (error) {
       console.error('Error selecting image:', error);
@@ -101,6 +104,7 @@ export const EditPostScreen: React.FC = () => {
   // Handle remove image
   const handleRemoveImage = useCallback(() => {
     setImage(null);
+    setImageRemoved(true);
   }, []);
 
   // Handle AI tag suggestion
@@ -164,16 +168,19 @@ export const EditPostScreen: React.FC = () => {
         return;
       }
 
-      // Upload new image if selected
-      let imageUrl: string | undefined = undefined;
-      if (image && image !== post.image_url) {
-        imageUrl = await uploadPostImage(user.id, image);
-      } else if (image === null) {
-        // Image was removed
-        imageUrl = undefined;
-      } else {
+      // Handle image changes
+      let imageUrl: string | null = null;
+      
+      if (imageRemoved) {
+        // User explicitly removed the image
+        imageUrl = null;
+      } else if (image && image !== post.image_url) {
+        // User selected a new image
+        const uploadedUrl = await uploadPostImage(user.id, image);
+        imageUrl = uploadedUrl || null;
+      } else if (image === post.image_url) {
         // Keep existing image
-        imageUrl = post.image_url || undefined;
+        imageUrl = post.image_url;
       }
 
       // Update post
@@ -195,7 +202,7 @@ export const EditPostScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [title, content, tags, image, post, user, postId, updatePostInStore, navigation]);
+  }, [title, content, tags, image, imageRemoved, post, user, postId, updatePostInStore, navigation]);
 
   // Handle add tag from suggestions
   const handleAddSuggestedTag = useCallback((tag: string) => {
