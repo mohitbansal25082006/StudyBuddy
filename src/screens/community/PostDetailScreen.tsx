@@ -13,13 +13,14 @@ import {
   TextInput,
   Alert,
   SafeAreaView,
+  Modal,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
-import { getPostWithComments, togglePostLike, createComment, toggleCommentLike } from '../../services/communityService';
+import { getPostWithComments, togglePostLike, createComment, toggleCommentLike, deleteComment } from '../../services/communityService';
 import { generateComment } from '../../services/communityAI';
 import { CommunityPost, Comment, AppStackParamList } from '../../types';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -45,7 +46,7 @@ export const PostDetailScreen: React.FC = () => {
   const navigation = useNavigation<PostDetailScreenNavigationProp>();
   const { postId } = route.params;
   const { user } = useAuthStore();
-  const { updatePost, addComment, updateComment, deleteComment } = useCommunityStore();
+  const { updatePost, addComment, updateComment, deleteComment: deleteCommentFromStore } = useCommunityStore();
   
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -54,6 +55,7 @@ export const PostDetailScreen: React.FC = () => {
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [aiGeneratingComment, setAiGeneratingComment] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
 
   // Load post and comments
   const loadPostAndComments = useCallback(async () => {
@@ -151,6 +153,19 @@ export const PostDetailScreen: React.FC = () => {
     }
   }, [user, commentText, postId, comments, addComment]);
 
+  // Handle delete comment
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    try {
+      await deleteComment(commentId);
+      deleteCommentFromStore(commentId);
+      setComments(comments.filter(c => c.id !== commentId));
+      Alert.alert('Success', 'Comment deleted successfully');
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      Alert.alert('Error', 'Failed to delete comment. Please try again.');
+    }
+  }, [deleteComment, deleteCommentFromStore, comments]);
+
   // Handle AI generate comment
   const handleGenerateComment = useCallback(async () => {
     if (!user || !post) return;
@@ -183,10 +198,39 @@ export const PostDetailScreen: React.FC = () => {
 
   // Handle edit post
   const handleEditPost = useCallback(() => {
+    setShowOptionsMenu(false);
     if (post) {
       navigation.navigate('EditPost', { postId: post.id });
     }
   }, [post, navigation]);
+
+  // Handle delete post
+  const handleDeletePost = useCallback(() => {
+    setShowOptionsMenu(false);
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          onPress: async () => {
+            try {
+              // Import deletePost here to avoid circular dependency
+              const { deletePost } = await import('../../services/communityService');
+              await deletePost(postId);
+              Alert.alert('Success', 'Post deleted successfully');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error deleting post:', error);
+              Alert.alert('Error', 'Failed to delete post. Please try again.');
+            }
+          }, 
+          style: 'destructive' 
+        },
+      ]
+    );
+  }, [postId, navigation]);
 
   // Load data on mount
   useEffect(() => {
@@ -248,10 +292,11 @@ export const PostDetailScreen: React.FC = () => {
             
             {post.user_id === user?.id && (
               <TouchableOpacity
-                onPress={handleEditPost}
+                onPress={() => setShowOptionsMenu(true)}
                 style={styles.optionsButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="ellipsis-vertical" size={20} color="#6B7280" />
+                <Ionicons name="ellipsis-vertical" size={24} color="#6B7280" />
               </TouchableOpacity>
             )}
           </View>
@@ -312,25 +357,7 @@ export const PostDetailScreen: React.FC = () => {
                   key={comment.id}
                   comment={comment}
                   onLike={() => handleLikeComment(comment.id)}
-                  onDelete={() => {
-                    // Handle delete comment
-                    Alert.alert(
-                      'Delete Comment',
-                      'Are you sure you want to delete this comment?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        { 
-                          text: 'Delete', 
-                          onPress: () => {
-                            // This would call the deleteComment function
-                            // For now, we'll just show an alert
-                            Alert.alert('Deleted', 'Comment deleted successfully');
-                          }, 
-                          style: 'destructive' 
-                        },
-                      ]
-                    );
-                  }}
+                  onDelete={() => handleDeleteComment(comment.id)}
                   isAuthor={comment.user_id === user?.id}
                 />
               ))
@@ -376,6 +403,50 @@ export const PostDetailScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Options Menu Modal */}
+        <Modal
+          visible={showOptionsMenu}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowOptionsMenu(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowOptionsMenu(false)}
+          >
+            <View style={styles.optionsMenu}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={handleEditPost}
+              >
+                <Ionicons name="create-outline" size={22} color="#374151" />
+                <Text style={styles.optionText}>Edit Post</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.optionDivider} />
+              
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={handleDeletePost}
+              >
+                <Ionicons name="trash-outline" size={22} color="#EF4444" />
+                <Text style={[styles.optionText, { color: '#EF4444' }]}>Delete Post</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.optionDivider} />
+              
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => setShowOptionsMenu(false)}
+              >
+                <Ionicons name="close-outline" size={22} color="#6B7280" />
+                <Text style={[styles.optionText, { color: '#6B7280' }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -405,6 +476,7 @@ const styles = StyleSheet.create({
   authorInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   authorAvatar: {
     width: 40,
@@ -427,7 +499,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   optionsButton: {
-    padding: 4,
+    padding: 8,
+    marginLeft: 8,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 40,
+    minHeight: 40,
   },
   postTitle: {
     fontSize: 20,
@@ -508,6 +587,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   commentInput: {
     flex: 1,
@@ -519,6 +599,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     maxHeight: 100,
     marginRight: 8,
+    backgroundColor: '#FFFFFF',
   },
   commentActions: {
     flexDirection: 'row',
@@ -556,5 +637,42 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  optionsMenu: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 300,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+    marginLeft: 12,
+  },
+  optionDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 16,
   },
 });

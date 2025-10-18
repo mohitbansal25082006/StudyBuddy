@@ -419,6 +419,21 @@ export const toggleCommentLike = async (commentId: string, userId: string): Prom
   }
 };
 
+// Delete a comment
+export const deleteComment = async (commentId: string): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('post_comments')
+      .delete()
+      .eq('id', commentId);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    throw error;
+  }
+};
+
 // Upload post image
 export const uploadPostImage = async (userId: string, uri: string): Promise<string | undefined> => {
   try {
@@ -464,6 +479,61 @@ export const uploadPostImage = async (userId: string, uri: string): Promise<stri
   } catch (error) {
     console.error('Error uploading post image:', error);
     return undefined; // Return undefined instead of null
+  }
+};
+
+// Get user's posts
+export const getUserPosts = async (userId: string, limit = 20, offset = 0): Promise<CommunityPost[]> => {
+  try {
+    const { data: posts, error: postsError } = await supabase
+      .from('community_posts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (postsError) throw postsError;
+
+    if (!posts || posts.length === 0) return [];
+
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, full_name, avatar_url')
+      .eq('id', userId)
+      .single();
+
+    if (profileError) throw profileError;
+
+    // Get like status for all posts
+    const { data: likes, error: likesError } = await supabase
+      .from('post_likes')
+      .select('post_id')
+      .eq('user_id', userId);
+
+    if (likesError) throw likesError;
+
+    const likedPostIds = likes ? likes.map(like => like.post_id) : [];
+
+    // Transform data to match our interface
+    return posts.map(post => ({
+      id: post.id,
+      user_id: post.user_id,
+      user_name: profile?.full_name || 'Anonymous',
+      user_avatar: profile?.avatar_url || null,
+      title: post.title,
+      content: post.content,
+      image_url: post.image_url || null,
+      tags: post.tags || [],
+      likes: post.likes_count || 0,
+      comments: post.comments_count || 0,
+      liked_by_user: likedPostIds.includes(post.id),
+      created_at: post.created_at,
+      updated_at: post.updated_at
+    }));
+  } catch (error) {
+    console.error('Error fetching user posts:', error);
+    throw error;
   }
 };
 

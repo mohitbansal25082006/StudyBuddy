@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
-import { updatePost, uploadPostImage } from '../../services/communityService';
+import { getPostWithComments, updatePost, uploadPostImage } from '../../services/communityService';
 import { tagPostContent, improvePostContent, moderateContent } from '../../services/communityAI';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
@@ -46,30 +46,27 @@ export const EditPostScreen: React.FC = () => {
   // Load post data
   useEffect(() => {
     const loadPost = async () => {
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to edit a post');
+        navigation.goBack();
+        return;
+      }
+
       try {
-        // This would typically fetch the post from your service
-        // For now, we'll use a mock implementation
-        const mockPost: CommunityPost = {
-          id: postId,
-          user_id: user?.id || '',
-          user_name: user?.email?.split('@')[0] || 'User',
-          user_avatar: null,
-          title: 'Sample Post Title',
-          content: 'This is a sample post content that can be edited.',
-          image_url: null,
-          tags: ['Math', 'Study Tips'],
-          likes: 0,
-          comments: 0,
-          liked_by_user: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+        const { post: postData } = await getPostWithComments(postId, user.id);
         
-        setPost(mockPost);
-        setTitle(mockPost.title);
-        setContent(mockPost.content);
-        setTags(mockPost.tags);
-        setImage(mockPost.image_url);
+        // Check if user is the author
+        if (postData.user_id !== user.id) {
+          Alert.alert('Error', 'You can only edit your own posts');
+          navigation.goBack();
+          return;
+        }
+        
+        setPost(postData);
+        setTitle(postData.title);
+        setContent(postData.content);
+        setTags(postData.tags);
+        setImage(postData.image_url);
       } catch (error) {
         console.error('Error loading post:', error);
         Alert.alert('Error', 'Failed to load post. Please try again.');
@@ -190,7 +187,7 @@ export const EditPostScreen: React.FC = () => {
       // Update in local state
       updatePostInStore(postId, updatedPost);
 
-      // Navigate back
+      Alert.alert('Success', 'Post updated successfully');
       navigation.goBack();
     } catch (error) {
       console.error('Error updating post:', error);
@@ -207,6 +204,32 @@ export const EditPostScreen: React.FC = () => {
     }
     setShowTagSuggestions(false);
   }, [tags]);
+
+  // Handle delete post
+  const handleDeletePost = useCallback(() => {
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to delete this post? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          onPress: async () => {
+            try {
+              const { deletePost } = await import('../../services/communityService');
+              await deletePost(postId);
+              Alert.alert('Success', 'Post deleted successfully');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error deleting post:', error);
+              Alert.alert('Error', 'Failed to delete post. Please try again.');
+            }
+          }, 
+          style: 'destructive' 
+        },
+      ]
+    );
+  }, [postId, navigation]);
 
   if (initialLoading) {
     return <LoadingSpinner />;
@@ -229,16 +252,24 @@ export const EditPostScreen: React.FC = () => {
           
           <Text style={styles.headerTitle}>Edit Post</Text>
           
-          <TouchableOpacity
-            onPress={handleUpdatePost}
-            disabled={loading || !title.trim() || !content.trim()}
-            style={[
-              styles.headerButton,
-              { opacity: (loading || !title.trim() || !content.trim()) ? 0.5 : 1 }
-            ]}
-          >
-            <Text style={styles.postButton}>Update</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={handleDeletePost}
+              style={styles.deleteButton}
+            >
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleUpdatePost}
+              disabled={loading || !title.trim() || !content.trim()}
+              style={[
+                styles.headerButton,
+                { opacity: (loading || !title.trim() || !content.trim()) ? 0.5 : 1 }
+              ]}
+            >
+              <Text style={styles.postButton}>Update</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Content */}
@@ -368,6 +399,14 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: 4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    padding: 4,
+    marginRight: 8,
   },
   headerTitle: {
     fontSize: 18,
