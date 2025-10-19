@@ -17,7 +17,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, Directory, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
 const { width, height } = Dimensions.get('window');
@@ -280,20 +280,17 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       const currentImageUri = images[currentIndex];
       const filename = currentImageUri.split('/').pop() || `image_${Date.now()}.jpg`;
       
-      // Use documentDirectory for saving
-      const docDir = FileSystem.documentDirectory;
-      if (!docDir) {
-        Alert.alert('Error', 'Unable to access device storage.');
-        return;
-      }
+      // Use document directory for saving
+      const docDir = new Directory(Paths.document, 'StudyBuddy');
+      docDir.create({ intermediates: true });
       
-      const fileUri = `${docDir}${filename}`;
+      const destination = new File(docDir, filename);
 
       // Download the image
-      const downloadResult = await FileSystem.downloadAsync(currentImageUri, fileUri);
+      const downloadedFile = await File.downloadFileAsync(currentImageUri, destination, { idempotent: true });
       
       // Save to media library
-      const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+      const asset = await MediaLibrary.createAssetAsync(downloadedFile.uri);
       await MediaLibrary.createAlbumAsync('StudyBuddy', asset, false);
 
       Alert.alert('Success', 'Image saved to gallery!');
