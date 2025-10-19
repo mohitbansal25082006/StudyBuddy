@@ -11,6 +11,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  FlatList,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +19,23 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { getPostWithComments, updatePost, uploadPostImage } from '../../services/communityService';
+import { 
+  uploadPostImages, 
+  deletePostImages, 
+  getPostImages 
+} from '../../services/supabase';
 import { tagPostContent, improvePostContent, moderateContent } from '../../services/communityAI';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { TagInput } from '../../components/community/TagInput';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
-import { CommunityPost } from '../../types';
+import { CommunityPost, PostImage } from '../../types';
+
+interface SelectedImage {
+  id?: string; // ID if it's an existing image from database
+  uri: string;
+  isNew: boolean; // true if it's a newly selected image
+}
 
 export const EditPostScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -36,13 +48,15 @@ export const EditPostScreen: React.FC = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [image, setImage] = useState<string | null>(null);
-  const [imageRemoved, setImageRemoved] = useState(false);
+  const [images, setImages] = useState<SelectedImage[]>([]);
+  const [deletedImageIds, setDeletedImageIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+
+  const MAX_IMAGES = 5;
 
   // Load post data
   useEffect(() => {
@@ -67,8 +81,29 @@ export const EditPostScreen: React.FC = () => {
         setTitle(postData.title);
         setContent(postData.content);
         setTags(postData.tags);
-        setImage(postData.image_url);
-        setImageRemoved(false);
+        
+        // Load images
+        const existingImages: SelectedImage[] = [];
+        
+        // Add images from post_images table
+        if (postData.images && postData.images.length > 0) {
+          postData.images.forEach(img => {
+            existingImages.push({
+              id: img.id,
+              uri: img.image_url,
+              isNew: false,
+            });
+          });
+        }
+        // Fallback to old image_url if no images in post_images
+        else if (postData.image_url) {
+          existingImages.push({
+            uri: postData.image_url,
+            isNew: false,
+          });
+        }
+        
+        setImages(existingImages);
       } catch (error) {
         console.error('Error loading post:', error);
         Alert.alert('Error', 'Failed to load post. Please try again.');
@@ -82,30 +117,55 @@ export const EditPostScreen: React.FC = () => {
   }, [postId, user, navigation]);
 
   // Handle image selection
-  const handleSelectImage = useCallback(async () => {
+  const handleSelectImages = useCallback(async () => {
+    if (images.length >= MAX_IMAGES) {
+      Alert.alert('Limit Reached', `You can only add up to ${MAX_IMAGES} images per post.`);
+      return;
+    }
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsMultipleSelection: true,
+        allowsEditing: false,
         quality: 0.8,
+        selectionLimit: MAX_IMAGES - images.length,
       });
 
-      if (!result.canceled && result.assets[0].uri) {
-        setImage(result.assets[0].uri);
-        setImageRemoved(false);
+      if (!result.canceled && result.assets.length > 0) {
+        const newImages: SelectedImage[] = result.assets.map(asset => ({
+          uri: asset.uri,
+          isNew: true,
+        }));
+        
+        setImages([...images, ...newImages].slice(0, MAX_IMAGES));
       }
     } catch (error) {
-      console.error('Error selecting image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      console.error('Error selecting images:', error);
+      Alert.alert('Error', 'Failed to select images. Please try again.');
     }
-  }, []);
+  }, [images]);
 
   // Handle remove image
-  const handleRemoveImage = useCallback(() => {
-    setImage(null);
-    setImageRemoved(true);
-  }, []);
+  const handleRemoveImage = useCallback((index: number) => {
+    const imageToRemove = images[index];
+    
+    // If it's an existing image from database, add to deleted list
+    if (imageToRemove.id) {
+      setDeletedImageIds([...deletedImageIds, imageToRemove.id]);
+    }
+    
+    // Remove from images array
+    setImages(images.filter((_, i) => i !== index));
+  }, [images, deletedImageIds]);
+
+  // Handle reorder images
+  const handleReorderImages = useCallback((fromIndex: number, toIndex: number) => {
+    const newImages = [...images];
+    const [movedImage] = newImages.splice(fromIndex, 1);
+    newImages.splice(toIndex, 0, movedImage);
+    setImages(newImages);
+  }, [images]);
 
   // Handle AI tag suggestion
   const handleSuggestTags = useCallback(async () => {
@@ -168,19 +228,33 @@ export const EditPostScreen: React.FC = () => {
         return;
       }
 
-      // Handle image changes
+      // Delete removed images from database
+      if (deletedImageIds.length > 0) {
+        for (const imageId of deletedImageIds) {
+          try {
+            await deletePostImages(postId);
+          } catch (error) {
+            console.error('Error deleting image:', error);
+          }
+        }
+      }
+
+      // Upload new images
+      const newImageUris = images.filter(img => img.isNew).map(img => img.uri);
+      if (newImageUris.length > 0) {
+        try {
+          await uploadPostImages(user.id, postId, newImageUris);
+        } catch (error) {
+          console.error('Error uploading images:', error);
+          Alert.alert('Warning', 'Some images may not have been uploaded correctly.');
+        }
+      }
+
+      // Determine image_url for backward compatibility
       let imageUrl: string | null = null;
-      
-      if (imageRemoved) {
-        // User explicitly removed the image
-        imageUrl = null;
-      } else if (image && image !== post.image_url) {
-        // User selected a new image
-        const uploadedUrl = await uploadPostImage(user.id, image);
-        imageUrl = uploadedUrl || null;
-      } else if (image === post.image_url) {
-        // Keep existing image
-        imageUrl = post.image_url;
+      if (images.length > 0) {
+        // Use the first image as the primary image_url
+        imageUrl = images[0].uri;
       }
 
       // Update post
@@ -202,7 +276,7 @@ export const EditPostScreen: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [title, content, tags, image, imageRemoved, post, user, postId, updatePostInStore, navigation]);
+  }, [title, content, tags, images, deletedImageIds, post, user, postId, updatePostInStore, navigation]);
 
   // Handle add tag from suggestions
   const handleAddSuggestedTag = useCallback((tag: string) => {
@@ -237,6 +311,33 @@ export const EditPostScreen: React.FC = () => {
       ]
     );
   }, [postId, navigation]);
+
+  // Render image item
+  const renderImageItem = useCallback(({ item, index }: { item: SelectedImage; index: number }) => (
+    <View style={styles.imageItem}>
+      <Image source={{ uri: item.uri }} style={styles.imagePreview} />
+      
+      {/* Remove button */}
+      <TouchableOpacity
+        onPress={() => handleRemoveImage(index)}
+        style={styles.removeImageButton}
+      >
+        <Ionicons name="close-circle" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+      
+      {/* Image order indicator */}
+      <View style={styles.imageOrderBadge}>
+        <Text style={styles.imageOrderText}>{index + 1}</Text>
+      </View>
+      
+      {/* New image indicator */}
+      {item.isNew && (
+        <View style={styles.newImageBadge}>
+          <Text style={styles.newImageText}>NEW</Text>
+        </View>
+      )}
+    </View>
+  ), [handleRemoveImage]);
 
   if (initialLoading) {
     return <LoadingSpinner />;
@@ -357,26 +458,55 @@ export const EditPostScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Image */}
-          {image ? (
-            <View style={styles.imageContainer}>
-              <Image source={{ uri: image }} style={styles.image} />
-              <TouchableOpacity
-                onPress={handleRemoveImage}
-                style={styles.removeImageButton}
-              >
-                <Ionicons name="close-circle" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+          {/* Images Section */}
+          <View style={styles.imagesSection}>
+            <View style={styles.imagesSectionHeader}>
+              <Text style={styles.inputLabel}>
+                Images ({images.length}/{MAX_IMAGES})
+              </Text>
+              {images.length < MAX_IMAGES && (
+                <TouchableOpacity
+                  onPress={handleSelectImages}
+                  style={styles.addImageButton}
+                >
+                  <Ionicons name="add-circle" size={20} color="#6366F1" />
+                  <Text style={styles.addImageButtonText}>Add Images</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          ) : (
-            <TouchableOpacity
-              onPress={handleSelectImage}
-              style={styles.addImageButton}
-            >
-              <Ionicons name="image" size={24} color="#9CA3AF" />
-              <Text style={styles.addImageText}>Add Image</Text>
-            </TouchableOpacity>
-          )}
+
+            {images.length > 0 ? (
+              <FlatList
+                data={images}
+                renderItem={renderImageItem}
+                keyExtractor={(item, index) => item.id || `image-${index}`}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.imagesList}
+              />
+            ) : (
+              <TouchableOpacity
+                onPress={handleSelectImages}
+                style={styles.emptyImagesContainer}
+              >
+                <Ionicons name="image-outline" size={48} color="#9CA3AF" />
+                <Text style={styles.emptyImagesText}>
+                  Tap to add images
+                </Text>
+                <Text style={styles.emptyImagesSubtext}>
+                  You can add up to {MAX_IMAGES} images
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Help Text */}
+          <View style={styles.helpText}>
+            <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+            <Text style={styles.helpTextContent}>
+              The first image will be used as the cover image. Drag to reorder.
+            </Text>
+          </View>
         </ScrollView>
 
         {/* Loading Overlay */}
@@ -401,6 +531,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingTop: 48,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -498,38 +629,109 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1E40AF',
   },
-  imageContainer: {
-    position: 'relative',
+  imagesSection: {
     marginBottom: 16,
   },
-  image: {
-    width: '100%',
-    height: 200,
+  imagesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addImageButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6366F1',
+    marginLeft: 4,
+  },
+  imagesList: {
+    paddingVertical: 8,
+  },
+  imageItem: {
+    position: 'relative',
+    marginRight: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: 150,
+    height: 150,
     borderRadius: 12,
   },
   removeImageButton: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: 12,
   },
-  addImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  imageOrderBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#6366F1',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageOrderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  newImageBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  newImageText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  emptyImagesContainer: {
     borderWidth: 2,
     borderColor: '#E5E7EB',
     borderStyle: 'dashed',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  addImageText: {
+  emptyImagesText: {
     fontSize: 16,
     fontWeight: '500',
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  emptyImagesSubtext: {
+    fontSize: 14,
     color: '#9CA3AF',
+    marginTop: 4,
+  },
+  helpText: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  helpTextContent: {
+    fontSize: 12,
+    color: '#6B7280',
     marginLeft: 8,
+    flex: 1,
   },
   loadingOverlay: {
     position: 'absolute',
