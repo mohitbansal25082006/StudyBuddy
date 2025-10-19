@@ -88,7 +88,25 @@ export const QAScreen: React.FC = () => {
       // Reset questions when user logs out
       resetQuestions();
     }
-  }, [user, questionsInitialized, loadQuestions, resetQuestions]);
+  }, [user, questionsInitialized]);
+
+  // Reload questions when sort changes
+  useEffect(() => {
+    if (user && questionsInitialized) {
+      console.log('Sort changed, reloading questions with sort:', sortBy);
+      loadQuestions(0, true);
+    }
+  }, [sortBy]);
+
+  // Refresh when screen comes into focus (e.g., after posting a question)
+  useFocusEffect(
+    useCallback(() => {
+      if (user && questionsInitialized) {
+        console.log('Screen focused, refreshing questions');
+        loadQuestions(0, true);
+      }
+    }, [user, questionsInitialized])
+  );
 
   // Refresh handler
   const handleRefresh = useCallback(() => {
@@ -103,14 +121,14 @@ export const QAScreen: React.FC = () => {
     }
   }, [loadingQuestions, hasMore, page, loadQuestions]);
 
-  // Sort by handler
+  // Sort by handler - just updates the sortBy state, useEffect will handle reload
   const handleSortBy = useCallback((newSortBy: typeof sortBy) => {
     if (newSortBy !== sortBy) {
+      console.log('Changing sort from', sortBy, 'to', newSortBy);
       setSortBy(newSortBy);
-      resetQuestions();
-      loadQuestions(0, true);
+      resetQuestions(); // Clear current questions
     }
-  }, [sortBy, loadQuestions, resetQuestions]);
+  }, [sortBy, resetQuestions]);
 
   // Render question item
   const renderQuestion = useCallback(
@@ -156,7 +174,8 @@ export const QAScreen: React.FC = () => {
     loadingQuestions, 
     questionsLength: questions.length, 
     error, 
-    questionsInitialized 
+    questionsInitialized,
+    sortBy
   });
 
   return (
@@ -228,7 +247,9 @@ export const QAScreen: React.FC = () => {
           <Ionicons name="help-circle-outline" size={64} color="#9CA3AF" />
           <Text style={styles.emptyTitle}>No Questions Yet</Text>
           <Text style={styles.emptySubtitle}>
-            Be the first to ask a question!
+            {sortBy === 'unanswered' 
+              ? 'No unanswered questions found!' 
+              : 'Be the first to ask a question!'}
           </Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('AskQuestionScreen')}
@@ -261,7 +282,9 @@ export const QAScreen: React.FC = () => {
                 <Ionicons name="help-circle-outline" size={64} color="#9CA3AF" />
                 <Text style={styles.emptyTitle}>No Questions Yet</Text>
                 <Text style={styles.emptySubtitle}>
-                  Be the first to ask a question!
+                  {sortBy === 'unanswered' 
+                    ? 'No unanswered questions found!' 
+                    : 'Be the first to ask a question!'}
                 </Text>
                 <TouchableOpacity
                   onPress={() => navigation.navigate('AskQuestionScreen')}

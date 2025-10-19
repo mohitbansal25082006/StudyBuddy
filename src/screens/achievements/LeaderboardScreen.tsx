@@ -56,7 +56,11 @@ export const LeaderboardScreen: React.FC = () => {
         setUserRank(rankData);
       } catch (rankError) {
         console.error('Error getting user rank:', rankError);
-        // Continue without rank
+        // Set rank to 1 if user is the only one
+        if (leaderboardData.length === 1 && leaderboardData[0].user_id === user.id) {
+          setUserRank(1);
+          rankData = 1;
+        }
       }
       
       // Get user XP
@@ -69,8 +73,8 @@ export const LeaderboardScreen: React.FC = () => {
         // Continue without XP
       }
       
-      // Generate motivational message
-      if (rankData && xpData) {
+      // Generate motivational message only if there are multiple users
+      if (rankData && xpData && leaderboardData.length > 1) {
         try {
           const message = await generateMotivationalMessage(
             rankData,
@@ -80,8 +84,14 @@ export const LeaderboardScreen: React.FC = () => {
           setMotivationalMessage(message);
         } catch (messageError) {
           console.error('Error generating message:', messageError);
-          // Continue without message
+          // Set default message
+          setMotivationalMessage(getDefaultMotivationalMessage(rankData, leaderboardData.length));
         }
+      } else if (leaderboardData.length === 1) {
+        // Special message for single user
+        setMotivationalMessage("You're pioneering the leaderboard! Keep learning and others will join soon.");
+      } else if (leaderboardData.length === 0) {
+        setMotivationalMessage("Start earning XP by asking questions and helping others!");
       }
     } catch (error: any) {
       console.error('Error loading leaderboard:', error);
@@ -91,6 +101,20 @@ export const LeaderboardScreen: React.FC = () => {
       setRefreshing(false);
     }
   }, [user, setLeaderboard, setUserRank, setUserXP, setLoadingLeaderboard]);
+
+  // Get default motivational message
+  const getDefaultMotivationalMessage = (rank: number, totalUsers: number): string => {
+    if (rank === 1) {
+      return `🏆 You're leading ${totalUsers} users! Keep up the great work!`;
+    } else if (rank <= 3) {
+      return `🥈 Great job! You're in the top 3 out of ${totalUsers} users!`;
+    } else if (rank <= 10) {
+      return `🌟 You're in the top 10! Keep pushing to reach the top!`;
+    } else {
+      const percentile = Math.round((rank / totalUsers) * 100);
+      return `💪 You're in the top ${percentile}%! Keep learning to climb higher!`;
+    }
+  };
 
   // Initial load
   useEffect(() => {
@@ -177,7 +201,29 @@ export const LeaderboardScreen: React.FC = () => {
 
   // Render user rank card
   const renderUserRankCard = () => {
+    // Don't show rank card if there's no leaderboard data
+    if (leaderboard.length === 0) {
+      return (
+        <View style={styles.userRankCard}>
+          <Text style={styles.userRankTitle}>Your Ranking</Text>
+          
+          <View style={styles.emptyRankContainer}>
+            <Ionicons name="trophy-outline" size={48} color="#9CA3AF" />
+            <Text style={styles.emptyRankText}>
+              Start earning XP to appear on the leaderboard!
+            </Text>
+            <Text style={styles.emptyRankSubtext}>
+              Ask questions, provide answers, and help others to earn XP.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    
     if (!userRank || !userXP) return null;
+    
+    // Calculate total users on leaderboard
+    const totalUsers = leaderboard.length;
     
     return (
       <View style={styles.userRankCard}>
@@ -191,6 +237,11 @@ export const LeaderboardScreen: React.FC = () => {
           <View style={styles.userXpInfo}>
             <Text style={styles.userXpText}>{userXP.xp_points} XP</Text>
             <Text style={styles.userLevelText}>Level {userXP.level}</Text>
+            {totalUsers > 1 && (
+              <Text style={styles.totalUsersText}>
+                Out of {totalUsers} {totalUsers === 1 ? 'user' : 'users'}
+              </Text>
+            )}
           </View>
         </View>
         
@@ -223,6 +274,23 @@ export const LeaderboardScreen: React.FC = () => {
     );
   };
 
+  // Render empty state
+  const renderEmptyState = () => (
+    <View style={styles.emptyStateContainer}>
+      <Ionicons name="trophy-outline" size={80} color="#9CA3AF" />
+      <Text style={styles.emptyStateTitle}>No Rankings Yet</Text>
+      <Text style={styles.emptyStateText}>
+        Be the first to earn XP and appear on the leaderboard!
+      </Text>
+      <TouchableOpacity
+        style={styles.emptyStateButton}
+        onPress={() => {/* Navigate to Q&A or activity */}}
+      >
+        <Text style={styles.emptyStateButtonText}>Start Earning XP</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   // Show initial loading
   if (loadingLeaderboard && leaderboard.length === 0) {
     return <LoadingSpinner />;
@@ -233,6 +301,9 @@ export const LeaderboardScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Leaderboard</Text>
+        <Text style={styles.headerSubtitle}>
+          {leaderboard.length} {leaderboard.length === 1 ? 'User' : 'Users'} Ranked
+        </Text>
       </View>
 
       {/* User Rank Card */}
@@ -241,6 +312,8 @@ export const LeaderboardScreen: React.FC = () => {
       {/* Error or Leaderboard */}
       {error ? (
         renderError()
+      ) : leaderboard.length === 0 ? (
+        renderEmptyState()
       ) : (
         <FlatList
           data={leaderboard}
@@ -287,6 +360,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
+  },
   userRankCard: {
     backgroundColor: '#FFFFFF',
     margin: 16,
@@ -332,6 +410,28 @@ const styles = StyleSheet.create({
   userLevelText: {
     fontSize: 14,
     color: '#6B7280',
+  },
+  totalUsersText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  emptyRankContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  emptyRankText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyRankSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
   },
   motivationContainer: {
     flexDirection: 'row',
@@ -445,6 +545,36 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  emptyStateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyStateButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  emptyStateButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 16,

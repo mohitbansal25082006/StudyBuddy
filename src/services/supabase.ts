@@ -1838,6 +1838,7 @@ export const unsubscribeFromAll = () => {
 // ============================================
 
 // Get community questions
+// Get community questions
 export const getCommunityQuestions = async (userId: string, limit = 20, offset = 0, sortBy = 'latest') => {
   try {
     // First, get the questions without the votes
@@ -1850,7 +1851,7 @@ export const getCommunityQuestions = async (userId: string, limit = 20, offset =
           avatar_url
         )
       `)
-      .neq('user_id', userId) // Exclude user's own questions
+      // REMOVED: .neq('user_id', userId) - Now includes user's own questions
       .range(offset, offset + limit - 1);
 
     // Apply sorting
@@ -2064,7 +2065,7 @@ export const voteOnQuestion = async (questionId: string, userId: string, voteTyp
         // User is changing their vote
         const { error } = await supabase
           .from('question_votes')
-          .update({ voteType })
+          .update({ vote_type: voteType })
           .eq('question_id', questionId)
           .eq('user_id', userId);
 
@@ -2165,7 +2166,7 @@ export const voteOnAnswer = async (answerId: string, userId: string, voteType: '
         // User is changing their vote
         const { error } = await supabase
           .from('answer_votes')
-          .update({ voteType })
+          .update({ vote_type: voteType })
           .eq('answer_id', answerId)
           .eq('user_id', userId);
 
@@ -2338,82 +2339,119 @@ export const unlockAchievement = async (userId: string, achievementId: string, a
 // Get leaderboard
 export const getLeaderboard = async (limit = 50) => {
   try {
-    // First, update the leaderboard
-    await supabase.rpc('update_weekly_leaderboard');
-    
-    // Then get the data
-    const { data, error } = await supabase
-      .from('weekly_leaderboard')
-      .select('*')
-      .eq('week_start', new Date(new Date().setDate(new Date().getDate() - new Date().getDay())).toISOString().split('T')[0]) // Get current week's start date
+    // Get user_xp data with profiles
+    const { data: xpData, error: xpError } = await supabase
+      .from('user_xp')
+      .select(`
+        user_id,
+        xp_points,
+        level,
+        profiles!inner (
+          full_name,
+          avatar_url
+        )
+      `)
       .order('xp_points', { ascending: false })
       .limit(limit);
 
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Error in getLeaderboard:', error);
-    // Fallback to a simple query if the function doesn't work
-    try {
-      const { data, error: fallbackError } = await supabase
-        .from('profiles')
-        .select(`
-          id as user_id,
-          full_name,
-          avatar_url,
-          user_xp!inner (
-            xp_points,
-            level
-          )
-        `)
-        .order('user_xp(xp_points)', { ascending: false })
-        .limit(limit);
+    if (xpError) {
+      console.error('Error fetching user_xp:', xpError);
+      throw xpError;
+    }
 
-      if (fallbackError) throw fallbackError;
-      
-      // Transform the data to match the expected format
-      return data.map((item: any) => ({
-        user_id: item.user_id,
-        full_name: item.full_name,
-        avatar_url: item.avatar_url,
-        xp_points: item.user_xp.xp_points,
-        level: item.user_xp.level,
-        answers_given: 0,
-        questions_asked: 0,
-        accepted_answers: 0
-      }));
-    } catch (fallbackError) {
-      console.error('Error in fallback leaderboard query:', fallbackError);
+    if (!xpData || xpData.length === 0) {
       return [];
     }
+
+    // Get all user IDs
+    const userIds = xpData.map(item => item.user_id);
+
+    // Get questions asked count for each user
+    const { data: questionsData, error: questionsError } = await supabase
+      .from('community_questions')
+      .select('user_id')
+      .in('user_id', userIds);
+
+    if (questionsError) {
+      console.warn('Error fetching questions:', questionsError);
+    }
+
+    // Get answers given count for each user
+    const { data: answersData, error: answersError } = await supabase
+      .from('question_answers')
+      .select('user_id, is_accepted')
+      .in('user_id', userIds);
+
+    if (answersError) {
+      console.warn('Error fetching answers:', answersError);
+    }
+
+    // Count questions, answers, and accepted answers per user
+    const questionsCount: Record<string, number> = {};
+    const answersCount: Record<string, number> = {};
+    const acceptedAnswersCount: Record<string, number> = {};
+
+    // Count questions
+    if (questionsData) {
+      questionsData.forEach(q => {
+        questionsCount[q.user_id] = (questionsCount[q.user_id] || 0) + 1;
+      });
+    }
+
+    // Count answers and accepted answers
+    if (answersData) {
+      answersData.forEach(a => {
+        answersCount[a.user_id] = (answersCount[a.user_id] || 0) + 1;
+        if (a.is_accepted) {
+          acceptedAnswersCount[a.user_id] = (acceptedAnswersCount[a.user_id] || 0) + 1;
+        }
+      });
+    }
+
+    // Transform the data to match LeaderboardEntry format
+    const leaderboardData = xpData.map((item: any) => ({
+      user_id: item.user_id,
+      full_name: item.profiles?.full_name || 'Anonymous',
+      avatar_url: item.profiles?.avatar_url || null,
+      xp_points: item.xp_points || 0,
+      level: item.level || 1,
+      questions_asked: questionsCount[item.user_id] || 0,
+      answers_given: answersCount[item.user_id] || 0,
+      accepted_answers: acceptedAnswersCount[item.user_id] || 0,
+    }));
+
+    console.log('Leaderboard data:', leaderboardData);
+    return leaderboardData;
+  } catch (error) {
+    console.error('Error in getLeaderboard:', error);
+    return [];
   }
 };
 
 // Get user's rank on leaderboard
 export const getUserLeaderboardRank = async (userId: string) => {
   try {
-    const { data, error } = await supabase
-      .rpc('get_user_leaderboard_rank', { user_uuid: userId });
+    // Get all users ordered by XP
+    const { data: allUsers, error } = await supabase
+      .from('user_xp')
+      .select('user_id, xp_points')
+      .order('xp_points', { ascending: false });
 
     if (error) throw error;
-    return data;
+    
+    if (!allUsers || allUsers.length === 0) return null;
+    
+    // Find user's position
+    const userIndex = allUsers.findIndex(user => user.user_id === userId);
+    
+    if (userIndex === -1) return null;
+    
+    const rank = userIndex + 1;
+    console.log(`User rank: ${rank} out of ${allUsers.length}`);
+    return rank;
   } catch (error) {
     console.error('Error in getUserLeaderboardRank:', error);
-    // Fallback to a simple calculation
-    try {
-      const { data: allUsers } = await supabase
-        .from('user_xp')
-        .select('user_id, xp_points')
-        .order('xp_points', { ascending: false });
-
-      if (!allUsers) return null;
-      
-      const userIndex = allUsers.findIndex(user => user.user_id === userId);
-      return userIndex >= 0 ? userIndex + 1 : null;
-    } catch (fallbackError) {
-      console.error('Error in fallback rank calculation:', fallbackError);
-      return null;
-    }
+    return null;
   }
 };
 
