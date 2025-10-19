@@ -1365,8 +1365,11 @@ export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) =
         post_images (
           id,
           image_url,
-          image_order
-        )
+          image_order,
+          created_at
+        ),
+        post_likes:user_id!post_likes(user_id),
+        post_bookmarks:user_id!post_bookmarks(user_id)
       )
     `)
     .eq('user_id', userId)

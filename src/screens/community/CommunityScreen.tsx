@@ -18,31 +18,15 @@ import { useAuthStore } from '../../store/authStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { getPosts, semanticSearch, togglePostLike, subscribeToPosts, unsubscribeFromPosts } from '../../services/communityService';
 import { getUserBookmarks, togglePostBookmark } from '../../services/supabase';
-import { CommunityPost } from '../../types';
+import { CommunityPost, AppStackParamList } from '../../types';
 import { PostCard } from '../../components/community/PostCard';
 import { SearchBar } from '../../components/community/SearchBar';
 import { TagFilter } from '../../components/community/TagFilter';
 import { EmptyState } from '../../components/community/EmptyState';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
-// Define route types for navigation
-type CommunityStackParamList = {
-  Community: undefined;
-  PostDetail: { postId: string };
-  CreatePost: undefined;
-  CommunityGuidelines: undefined;
-  Bookmarks: undefined;
-  ReportContent: { 
-    contentType: 'post' | 'comment' | 'reply'; 
-    contentId: string; 
-    contentAuthorId: string;
-  };
-};
-
-type CommunityScreenNavigationProp = StackNavigationProp<
-  CommunityStackParamList,
-  'Community'
->;
+// Define navigation prop type using the existing AppStackParamList
+type CommunityScreenNavigationProp = StackNavigationProp<AppStackParamList, 'Community'>;
 
 // Define type for bookmark data from Supabase
 interface BookmarkData {
@@ -69,8 +53,10 @@ interface BookmarkData {
       id: string;
       image_url: string;
       image_order: number;
+      created_at: string;
     }>;
     post_likes?: any[];
+    post_bookmarks?: any[];
   };
 }
 
@@ -127,7 +113,7 @@ export const CommunityScreen: React.FC = () => {
         post_id: post.id,
         image_url: img.image_url,
         image_order: img.image_order,
-        created_at: new Date().toISOString(),
+        created_at: img.created_at,
       })) || [],
       tags: post.tags || [],
       likes: post.likes_count || 0,
@@ -649,7 +635,7 @@ export const CommunityScreen: React.FC = () => {
           }
           onAction={
             showBookmarks 
-              ? () => navigation.navigate('Community')
+              ? toggleBookmarksView
               : (isSearching ? clearSearch : () => navigation.navigate('CreatePost'))
           }
         />

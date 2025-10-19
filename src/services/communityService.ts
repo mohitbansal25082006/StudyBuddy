@@ -1,6 +1,6 @@
 // F:\StudyBuddy\src\services\communityService.ts
 import { supabase } from './supabase';
-import { CommunityPost, Comment } from '../store/communityStore';
+import { CommunityPost, Comment, PostImage } from '../types'; // Import from types instead
 import { semanticSearch } from './communityAI';
 
 // Real-time subscription for posts
@@ -37,7 +37,7 @@ export const unsubscribeFromPosts = () => {
   }
 };
 
-// Get all posts
+// Get all posts with images support
 export const getPosts = async (userId: string, limit = 20, offset = 0): Promise<CommunityPost[]> => {
   try {
     // First, get the posts
@@ -60,6 +60,19 @@ export const getPosts = async (userId: string, limit = 20, offset = 0): Promise<
 
     if (profilesError) throw profilesError;
 
+    // Get post images for all posts
+    const postIds = posts.map(post => post.id);
+    const { data: postImages, error: imagesError } = await supabase
+      .from('post_images')
+      .select('*')
+      .in('post_id', postIds)
+      .order('image_order', { ascending: true });
+
+    if (imagesError) {
+      console.warn('Error fetching post images:', imagesError);
+      // Continue without images if table doesn't exist
+    }
+
     // Get like status for all posts
     const { data: likes, error: likesError } = await supabase
       .from('post_likes')
@@ -70,9 +83,23 @@ export const getPosts = async (userId: string, limit = 20, offset = 0): Promise<
 
     const likedPostIds = likes ? likes.map(like => like.post_id) : [];
 
+    // Get bookmark status for all posts
+    const { data: bookmarks, error: bookmarksError } = await supabase
+      .from('post_bookmarks')
+      .select('post_id')
+      .eq('user_id', userId);
+
+    if (bookmarksError) {
+      console.warn('Error fetching bookmarks:', bookmarksError);
+    }
+
+    const bookmarkedPostIds = bookmarks ? bookmarks.map(bookmark => bookmark.post_id) : [];
+
     // Transform data to match our interface
     return posts.map(post => {
       const profile = profiles?.find(p => p.id === post.user_id);
+      const images = postImages ? postImages.filter(img => img.post_id === post.id) : [];
+      
       return {
         id: post.id,
         user_id: post.user_id,
@@ -80,11 +107,19 @@ export const getPosts = async (userId: string, limit = 20, offset = 0): Promise<
         user_avatar: profile?.avatar_url || null,
         title: post.title,
         content: post.content,
-        image_url: post.image_url || null,
+        image_url: post.image_url || null, // Keep for backward compatibility
+        images: images.map(img => ({
+          id: img.id,
+          post_id: img.post_id,
+          image_url: img.image_url,
+          image_order: img.image_order,
+          created_at: img.created_at,
+        })),
         tags: post.tags || [],
         likes: post.likes_count || 0,
         comments: post.comments_count || 0,
         liked_by_user: likedPostIds.includes(post.id),
+        bookmarked_by_user: bookmarkedPostIds.includes(post.id),
         created_at: post.created_at,
         updated_at: post.updated_at
       };
@@ -95,7 +130,7 @@ export const getPosts = async (userId: string, limit = 20, offset = 0): Promise<
   }
 };
 
-// Get a single post with comments
+// Get a single post with comments and images
 export const getPostWithComments = async (postId: string, userId: string): Promise<{ post: CommunityPost; comments: Comment[] }> => {
   try {
     // Get the post
@@ -116,9 +151,28 @@ export const getPostWithComments = async (postId: string, userId: string): Promi
 
     if (profileError) throw profileError;
 
+    // Get post images
+    const { data: postImages, error: imagesError } = await supabase
+      .from('post_images')
+      .select('*')
+      .eq('post_id', postId)
+      .order('image_order', { ascending: true });
+
+    if (imagesError) {
+      console.warn('Error fetching post images:', imagesError);
+    }
+
     // Get like status for the post
     const { data: like, error: likeError } = await supabase
       .from('post_likes')
+      .select('post_id')
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+      .single();
+
+    // Get bookmark status for the post
+    const { data: bookmark, error: bookmarkError } = await supabase
+      .from('post_bookmarks')
       .select('post_id')
       .eq('post_id', postId)
       .eq('user_id', userId)
@@ -152,6 +206,47 @@ export const getPostWithComments = async (postId: string, userId: string): Promi
 
     const likedCommentIds = commentLikes ? commentLikes.map(like => like.comment_id) : [];
 
+    // Get replies for all comments
+    const commentIds = commentsData.map(comment => comment.id);
+    const { data: repliesData, error: repliesError } = await supabase
+      .from('comment_replies')
+      .select('*')
+      .in('comment_id', commentIds)
+      .order('created_at', { ascending: true });
+
+    if (repliesError) {
+      console.warn('Error fetching replies:', repliesError);
+    }
+
+    // Get reply user profiles
+    const replyUserIds = repliesData ? [...new Set(repliesData.map(reply => reply.user_id))] : [];
+    const { data: replyProfiles, error: replyProfilesError } = replyUserIds.length > 0
+      ? await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', replyUserIds)
+      : { data: [], error: null };
+
+    if (replyProfilesError) {
+      console.warn('Error fetching reply profiles:', replyProfilesError);
+    }
+
+    // Get reply likes
+    const replyIds = repliesData ? repliesData.map(reply => reply.id) : [];
+    const { data: replyLikes, error: replyLikesError } = replyIds.length > 0
+      ? await supabase
+          .from('reply_likes')
+          .select('reply_id')
+          .in('reply_id', replyIds)
+          .eq('user_id', userId)
+      : { data: [], error: null };
+
+    if (replyLikesError) {
+      console.warn('Error fetching reply likes:', replyLikesError);
+    }
+
+    const likedReplyIds = replyLikes ? replyLikes.map(like => like.reply_id) : [];
+
     // Transform post data
     const post: CommunityPost = {
       id: postData.id,
@@ -160,18 +255,28 @@ export const getPostWithComments = async (postId: string, userId: string): Promi
       user_avatar: profile?.avatar_url || null,
       title: postData.title,
       content: postData.content,
-      image_url: postData.image_url || null,
+      image_url: postData.image_url || null, // Keep for backward compatibility
+      images: postImages ? postImages.map(img => ({
+        id: img.id,
+        post_id: img.post_id,
+        image_url: img.image_url,
+        image_order: img.image_order,
+        created_at: img.created_at,
+      })) : [],
       tags: postData.tags || [],
       likes: postData.likes_count || 0,
       comments: postData.comments_count || 0,
       liked_by_user: !!like,
+      bookmarked_by_user: !!bookmark,
       created_at: postData.created_at,
       updated_at: postData.updated_at
     };
 
-    // Transform comments data
+    // Transform comments data with replies
     const comments: Comment[] = commentsData.map(comment => {
       const commentProfile = commentProfiles?.find(p => p.id === comment.user_id);
+      const commentReplies = repliesData ? repliesData.filter(reply => reply.comment_id === comment.id) : [];
+      
       return {
         id: comment.id,
         post_id: comment.post_id,
@@ -181,6 +286,21 @@ export const getPostWithComments = async (postId: string, userId: string): Promi
         content: comment.content,
         likes: comment.likes_count || 0,
         liked_by_user: likedCommentIds.includes(comment.id),
+        replies: commentReplies.map(reply => {
+          const replyProfile = replyProfiles?.find(p => p.id === reply.user_id);
+          return {
+            id: reply.id,
+            comment_id: reply.comment_id,
+            user_id: reply.user_id,
+            user_name: replyProfile?.full_name || 'Anonymous',
+            user_avatar: replyProfile?.avatar_url || null,
+            content: reply.content,
+            likes: reply.likes_count || 0,
+            liked_by_user: likedReplyIds.includes(reply.id),
+            created_at: reply.created_at,
+            updated_at: reply.updated_at,
+          };
+        }),
         created_at: comment.created_at,
         updated_at: comment.updated_at
       };
@@ -226,10 +346,12 @@ export const createPost = async (post: {
       title: data.title,
       content: data.content,
       image_url: data.image_url || null,
+      images: [],
       tags: data.tags || [],
       likes: 0,
       comments: 0,
       liked_by_user: false,
+      bookmarked_by_user: false,
       created_at: data.created_at,
       updated_at: data.updated_at
     };
@@ -284,6 +406,13 @@ export const updatePost = async (postId: string, updates: {
       .eq('id', data.user_id)
       .single();
 
+    // Get post images
+    const { data: postImages } = await supabase
+      .from('post_images')
+      .select('*')
+      .eq('post_id', postId)
+      .order('image_order', { ascending: true });
+
     // Transform data to match our interface
     return {
       id: data.id,
@@ -293,10 +422,18 @@ export const updatePost = async (postId: string, updates: {
       title: data.title,
       content: data.content,
       image_url: data.image_url || null,
+      images: postImages ? postImages.map(img => ({
+        id: img.id,
+        post_id: img.post_id,
+        image_url: img.image_url,
+        image_order: img.image_order,
+        created_at: img.created_at,
+      })) : [],
       tags: data.tags || [],
       likes: data.likes_count || 0,
       comments: data.comments_count || 0,
       liked_by_user: false, // We'll update this separately
+      bookmarked_by_user: false,
       created_at: data.created_at,
       updated_at: data.updated_at
     };
@@ -309,6 +446,17 @@ export const updatePost = async (postId: string, updates: {
 // Delete a post
 export const deletePost = async (postId: string): Promise<void> => {
   try {
+    // Delete post images first
+    const { error: imagesError } = await supabase
+      .from('post_images')
+      .delete()
+      .eq('post_id', postId);
+
+    if (imagesError) {
+      console.warn('Error deleting post images:', imagesError);
+    }
+
+    // Delete the post
     const { error } = await supabase
       .from('community_posts')
       .delete()
@@ -392,6 +540,7 @@ export const createComment = async (comment: {
       content: data.content,
       likes: 0,
       liked_by_user: false,
+      replies: [],
       created_at: data.created_at,
       updated_at: data.updated_at
     };
@@ -526,6 +675,18 @@ export const getUserPosts = async (userId: string, limit = 20, offset = 0): Prom
 
     if (profileError) throw profileError;
 
+    // Get post images for all posts
+    const postIds = posts.map(post => post.id);
+    const { data: postImages, error: imagesError } = await supabase
+      .from('post_images')
+      .select('*')
+      .in('post_id', postIds)
+      .order('image_order', { ascending: true });
+
+    if (imagesError) {
+      console.warn('Error fetching post images:', imagesError);
+    }
+
     // Get like status for all posts
     const { data: likes, error: likesError } = await supabase
       .from('post_likes')
@@ -536,22 +697,46 @@ export const getUserPosts = async (userId: string, limit = 20, offset = 0): Prom
 
     const likedPostIds = likes ? likes.map(like => like.post_id) : [];
 
+    // Get bookmark status for all posts
+    const { data: bookmarks, error: bookmarksError } = await supabase
+      .from('post_bookmarks')
+      .select('post_id')
+      .eq('user_id', userId);
+
+    if (bookmarksError) {
+      console.warn('Error fetching bookmarks:', bookmarksError);
+    }
+
+    const bookmarkedPostIds = bookmarks ? bookmarks.map(bookmark => bookmark.post_id) : [];
+
     // Transform data to match our interface
-    return posts.map(post => ({
-      id: post.id,
-      user_id: post.user_id,
-      user_name: profile?.full_name || 'Anonymous',
-      user_avatar: profile?.avatar_url || null,
-      title: post.title,
-      content: post.content,
-      image_url: post.image_url || null,
-      tags: post.tags || [],
-      likes: post.likes_count || 0,
-      comments: post.comments_count || 0,
-      liked_by_user: likedPostIds.includes(post.id),
-      created_at: post.created_at,
-      updated_at: post.updated_at
-    }));
+    return posts.map(post => {
+      const images = postImages ? postImages.filter(img => img.post_id === post.id) : [];
+      
+      return {
+        id: post.id,
+        user_id: post.user_id,
+        user_name: profile?.full_name || 'Anonymous',
+        user_avatar: profile?.avatar_url || null,
+        title: post.title,
+        content: post.content,
+        image_url: post.image_url || null,
+        images: images.map(img => ({
+          id: img.id,
+          post_id: img.post_id,
+          image_url: img.image_url,
+          image_order: img.image_order,
+          created_at: img.created_at,
+        })),
+        tags: post.tags || [],
+        likes: post.likes_count || 0,
+        comments: post.comments_count || 0,
+        liked_by_user: likedPostIds.includes(post.id),
+        bookmarked_by_user: bookmarkedPostIds.includes(post.id),
+        created_at: post.created_at,
+        updated_at: post.updated_at
+      };
+    });
   } catch (error) {
     console.error('Error fetching user posts:', error);
     throw error;
