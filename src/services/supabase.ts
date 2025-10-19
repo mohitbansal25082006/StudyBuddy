@@ -1350,15 +1350,27 @@ export const uploadPostImage = async (uri: string, userId: string) => {
 // BOOKMARK HELPER FUNCTIONS
 // ============================================
 
-// Get user's bookmarked posts
+// Get user's bookmarked posts - FIXED VERSION
 export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) => {
   const { data, error } = await supabase
     .from('post_bookmarks')
     .select(`
-      *,
-      community_posts:post_id (
-        *,
-        profiles:user_id (
+      id,
+      post_id,
+      user_id,
+      created_at,
+      community_posts!post_bookmarks_post_id_fkey (
+        id,
+        user_id,
+        title,
+        content,
+        image_url,
+        tags,
+        likes_count,
+        comments_count,
+        created_at,
+        updated_at,
+        profiles!community_posts_user_id_fkey (
           full_name,
           avatar_url
         ),
@@ -1367,9 +1379,7 @@ export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) =
           image_url,
           image_order,
           created_at
-        ),
-        post_likes:user_id!post_likes(user_id),
-        post_bookmarks:user_id!post_bookmarks(user_id)
+        )
       )
     `)
     .eq('user_id', userId)
@@ -1380,37 +1390,54 @@ export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) =
   return data;
 };
 
-// Toggle bookmark on a post
+// Toggle bookmark on a post - FIXED VERSION
 export const togglePostBookmark = async (postId: string, userId: string) => {
-  // Check if user already bookmarked the post
-  const { data: existingBookmark } = await supabase
-    .from('post_bookmarks')
-    .select('*')
-    .eq('post_id', postId)
-    .eq('user_id', userId)
-    .single();
-
-  if (existingBookmark) {
-    // User already bookmarked, so remove bookmark
-    const { error } = await supabase
+  try {
+    // Check if user already bookmarked the post
+    const { data: existingBookmark, error: checkError } = await supabase
       .from('post_bookmarks')
-      .delete()
+      .select('id')
       .eq('post_id', postId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .maybeSingle(); // Use maybeSingle instead of single to avoid error when not found
 
-    if (error) throw error;
-    return false;
-  } else {
-    // User hasn't bookmarked, so add bookmark
-    const { error } = await supabase
-      .from('post_bookmarks')
-      .insert({
-        post_id: postId,
-        user_id: userId
-      });
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
 
-    if (error) throw error;
-    return true;
+    if (existingBookmark) {
+      // User already bookmarked, so remove bookmark
+      const { error: deleteError } = await supabase
+        .from('post_bookmarks')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+      return false;
+    } else {
+      // User hasn't bookmarked, so add bookmark
+      const { error: insertError } = await supabase
+        .from('post_bookmarks')
+        .insert({
+          post_id: postId,
+          user_id: userId,
+          created_at: new Date().toISOString(),
+        });
+
+      if (insertError) {
+        // Handle duplicate key error specifically
+        if (insertError.code === '23505') {
+          console.warn('Bookmark already exists, treating as success');
+          return true;
+        }
+        throw insertError;
+      }
+      return true;
+    }
+  } catch (error) {
+    console.error('Error toggling bookmark:', error);
+    throw error;
   }
 };
 
