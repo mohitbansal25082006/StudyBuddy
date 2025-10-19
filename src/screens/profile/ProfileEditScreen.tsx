@@ -10,7 +10,9 @@ import {
   Platform, 
   Image, 
   RefreshControl,
-  StyleSheet 
+  StyleSheet,
+  Animated,
+  Dimensions 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Input } from '../../components/Input';
@@ -19,9 +21,13 @@ import { updateProfile, uploadAvatar } from '../../services/supabase';
 import { getUserPosts, deletePost } from '../../services/communityService';
 import { getUserBookmarks } from '../../services/supabase';
 import { useAuthStore } from '../../store/authStore';
+import { useCommunityStore } from '../../store/communityStore';
 import { CommunityPost, PostBookmark, PostImage } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
 
 const LEARNING_STYLES = [
   { value: 'visual', label: '👁️ Visual' },
@@ -62,6 +68,13 @@ interface BookmarkWithPost extends PostBookmark {
 
 export const ProfileEditScreen = ({ navigation }: any) => {
   const { user, profile, setProfile, logout } = useAuthStore();
+  const { 
+    userXP, 
+    userRank, 
+    userAchievements,
+    loadLeaderboardData,
+    loadAchievementsData 
+  } = useCommunityStore();
   const navigator = useNavigation<any>();
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -81,27 +94,66 @@ export const ProfileEditScreen = ({ navigation }: any) => {
   // Bookmarks states
   const [bookmarks, setBookmarks] = useState<CommunityPost[]>([]);
   const [loadingBookmarks, setLoadingBookmarks] = useState(false);
-  const [showBookmarks, setShowBookmarks] = useState(false);
+
+  // Animation values
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(50));
+
+  // Load user data on mount
+  useEffect(() => {
+    if (user) {
+      loadAllData();
+      
+      // Animate in
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [user]);
+
+  // Load all user data
+  const loadAllData = async () => {
+    if (!user) return;
+    
+    try {
+      // Load posts
+      loadUserPosts();
+      
+      // Load bookmarks
+      loadBookmarks();
+      
+      // Load XP and achievements
+      await loadLeaderboardData(user.id);
+      await loadAchievementsData(user.id);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
 
   // Load user posts
-  useEffect(() => {
-    const loadUserPosts = async () => {
-      if (!user) return;
-      
-      try {
-        setLoadingPosts(true);
-        const posts = await getUserPosts(user.id, 20, 0);
-        setUserPosts(posts);
-      } catch (error) {
-        console.error('Error loading user posts:', error);
-        Alert.alert('Error', 'Failed to load your posts');
-      } finally {
-        setLoadingPosts(false);
-      }
-    };
-
-    loadUserPosts();
-  }, [user]);
+  const loadUserPosts = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingPosts(true);
+      const posts = await getUserPosts(user.id, 20, 0);
+      setUserPosts(posts);
+    } catch (error) {
+      console.error('Error loading user posts:', error);
+      Alert.alert('Error', 'Failed to load your posts');
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
 
   // Load bookmarks
   const loadBookmarks = async () => {
@@ -111,12 +163,9 @@ export const ProfileEditScreen = ({ navigation }: any) => {
       setLoadingBookmarks(true);
       const userBookmarksRaw = await getUserBookmarks(user.id, 5, 0);
       
-      // Safely cast to unknown first, then to BookmarkWithPost[]
       const userBookmarks = userBookmarksRaw as unknown as BookmarkWithPost[];
       
-      // Extract post data from bookmarks with proper error handling
       const bookmarkedPosts = userBookmarks.map((bookmark: BookmarkWithPost) => {
-        // Check if community_posts exists
         if (!bookmark.community_posts) {
           console.warn('Bookmark without post data:', bookmark.id);
           return null;
@@ -124,13 +173,12 @@ export const ProfileEditScreen = ({ navigation }: any) => {
         
         const post = bookmark.community_posts;
         
-        // Convert post_images to PostImage format with null check
         const images: PostImage[] = (post.post_images || []).map(img => ({
           id: img.id,
           post_id: post.id,
           image_url: img.image_url,
           image_order: img.image_order,
-          created_at: img.created_at || new Date().toISOString(), // Use provided created_at or fallback to current time
+          created_at: img.created_at || new Date().toISOString(),
         }));
         
         return {
@@ -150,7 +198,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           created_at: post.created_at,
           updated_at: post.updated_at,
         };
-      }).filter(Boolean) as CommunityPost[]; // Filter out null values
+      }).filter(Boolean) as CommunityPost[];
       
       setBookmarks(bookmarkedPosts);
     } catch (error) {
@@ -161,24 +209,13 @@ export const ProfileEditScreen = ({ navigation }: any) => {
     }
   };
 
-  // Load bookmarks when component mounts
-  useEffect(() => {
-    loadBookmarks();
-  }, [user]);
-
   // Refresh all data
   const handleRefresh = async () => {
     if (!user) return;
     
     try {
       setRefreshing(true);
-      
-      // Refresh posts
-      const posts = await getUserPosts(user.id, 20, 0);
-      setUserPosts(posts);
-      
-      // Refresh bookmarks
-      await loadBookmarks();
+      await loadAllData();
     } catch (error) {
       console.error('Error refreshing data:', error);
       Alert.alert('Error', 'Failed to refresh data');
@@ -189,7 +226,6 @@ export const ProfileEditScreen = ({ navigation }: any) => {
 
   // Pick image from gallery
   const pickImage = async () => {
-    // Request permissions
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     
     if (status !== 'granted') {
@@ -197,7 +233,6 @@ export const ProfileEditScreen = ({ navigation }: any) => {
       return;
     }
 
-    // Launch image picker
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -235,12 +270,10 @@ export const ProfileEditScreen = ({ navigation }: any) => {
     try {
       let avatarUrl = profile?.avatar_url;
 
-      // Upload new avatar if changed
       if (avatarUri && avatarUri !== profile?.avatar_url) {
         avatarUrl = await uploadAvatar(user.id, avatarUri);
       }
 
-      // Update profile
       const updatedProfile = await updateProfile(user.id, {
         full_name: fullName,
         bio,
@@ -302,6 +335,105 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           style: 'destructive' 
         },
       ]
+    );
+  };
+
+  // Calculate level progress
+  const calculateLevelProgress = () => {
+    if (!userXP) return 0;
+    const currentLevelXP = (userXP.level - 1) * 100;
+    const nextLevelXP = userXP.level * 100;
+    const progress = ((userXP.xp_points - currentLevelXP) / (nextLevelXP - currentLevelXP)) * 100;
+    return Math.min(Math.max(progress, 0), 100);
+  };
+
+  // Get XP needed for next level
+  const getXPForNextLevel = () => {
+    if (!userXP) return 0;
+    const nextLevelXP = userXP.level * 100;
+    return nextLevelXP - userXP.xp_points;
+  };
+
+  // Render stats card
+  const renderStatsCard = () => {
+    const levelProgress = calculateLevelProgress();
+    const xpNeeded = getXPForNextLevel();
+
+    return (
+      <Animated.View 
+        style={[
+          styles.statsCard,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }]
+          }
+        ]}
+      >
+        <LinearGradient
+          colors={['#6366F1', '#8B5CF6', '#EC4899']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.statsGradient}
+        >
+          {/* Level & XP Section */}
+          <View style={styles.levelSection}>
+            <View style={styles.levelBadge}>
+              <Text style={styles.levelBadgeText}>Level {userXP?.level || 1}</Text>
+            </View>
+            <Text style={styles.xpText}>{userXP?.xp_points || 0} XP</Text>
+          </View>
+
+          {/* Progress Bar */}
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBarBackground}>
+              <View style={[styles.progressBarFill, { width: `${levelProgress}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{xpNeeded} XP to Level {(userXP?.level || 1) + 1}</Text>
+          </View>
+
+          {/* Stats Grid */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Ionicons name="trophy" size={24} color="#FCD34D" />
+              <Text style={styles.statValue}>{userRank || '-'}</Text>
+              <Text style={styles.statLabel}>Rank</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="ribbon" size={24} color="#FCD34D" />
+              <Text style={styles.statValue}>{userAchievements?.length || 0}</Text>
+              <Text style={styles.statLabel}>Badges</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="document-text" size={24} color="#FCD34D" />
+              <Text style={styles.statValue}>{userPosts.length}</Text>
+              <Text style={styles.statLabel}>Posts</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Ionicons name="bookmark" size={24} color="#FCD34D" />
+              <Text style={styles.statValue}>{bookmarks.length}</Text>
+              <Text style={styles.statLabel}>Saved</Text>
+            </View>
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigator.navigate('LeaderboardScreen')}
+            >
+              <Ionicons name="podium" size={18} color="#FFFFFF" />
+              <Text style={styles.quickActionText}>Leaderboard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => navigator.navigate('AchievementsScreen')}
+            >
+              <Ionicons name="medal" size={18} color="#FFFFFF" />
+              <Text style={styles.quickActionText}>Achievements</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </Animated.View>
     );
   };
 
@@ -379,91 +511,51 @@ export const ProfileEditScreen = ({ navigation }: any) => {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+      style={styles.container}
     >
       <ScrollView 
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
             colors={['#6366F1']}
+            tintColor="#6366F1"
           />
         }
       >
-        <View style={{ paddingHorizontal: 24, paddingTop: 60 }}>
+        <View style={styles.content}>
           {/* Header */}
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 32,
-          }}>
+          <View style={styles.header}>
             <TouchableOpacity onPress={() => navigation.goBack()}>
-              <Text style={{ fontSize: 24, color: '#6366F1' }}>←</Text>
+              <Ionicons name="arrow-back" size={24} color="#111827" />
             </TouchableOpacity>
-            <Text style={{
-              fontSize: 20,
-              fontWeight: 'bold',
-              color: '#111827',
-            }}>
-              Edit Profile
-            </Text>
+            <Text style={styles.headerTitle}>Edit Profile</Text>
             <View style={{ width: 24 }} />
           </View>
 
+          {/* Stats Card */}
+          {renderStatsCard()}
+
           {/* Avatar */}
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+          <View style={styles.avatarSection}>
             <TouchableOpacity onPress={pickImage} activeOpacity={0.8}>
-              <View style={{
-                width: 120,
-                height: 120,
-                borderRadius: 60,
-                backgroundColor: '#E5E7EB',
-                justifyContent: 'center',
-                alignItems: 'center',
-                overflow: 'hidden',
-                borderWidth: 4,
-                borderColor: '#FFFFFF',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 4,
-              }}>
+              <View style={styles.avatarContainer}>
                 {avatarUri ? (
                   <Image
                     source={{ uri: avatarUri }}
-                    style={{ width: '100%', height: '100%' }}
+                    style={styles.avatar}
                   />
                 ) : (
-                  <Text style={{ fontSize: 48 }}>👤</Text>
+                  <Text style={styles.avatarPlaceholder}>👤</Text>
                 )}
               </View>
-              <View style={{
-                position: 'absolute',
-                bottom: 0,
-                right: 0,
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: '#6366F1',
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 3,
-                borderColor: '#FFFFFF',
-              }}>
-                <Text style={{ fontSize: 18 }}>📷</Text>
+              <View style={styles.cameraButton}>
+                <Ionicons name="camera" size={18} color="#FFFFFF" />
               </View>
             </TouchableOpacity>
-            <Text style={{
-              marginTop: 12,
-              fontSize: 14,
-              color: '#6B7280',
-            }}>
-              Tap to change photo
-            </Text>
+            <Text style={styles.avatarHint}>Tap to change photo</Text>
           </View>
 
           {/* Form */}
@@ -493,35 +585,22 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           />
 
           {/* Learning Style */}
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
-              Learning Style
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+          <View style={styles.optionSection}>
+            <Text style={styles.optionLabel}>Learning Style</Text>
+            <View style={styles.optionsContainer}>
               {LEARNING_STYLES.map((style) => (
                 <TouchableOpacity
                   key={style.value}
                   onPress={() => setLearningStyle(style.value as any)}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: learningStyle === style.value ? '#6366F1' : '#F9FAFB',
-                    borderWidth: 2,
-                    borderColor: learningStyle === style.value ? '#6366F1' : '#E5E7EB',
-                    borderRadius: 24,
-                    margin: 4,
-                  }}
+                  style={[
+                    styles.optionButton,
+                    learningStyle === style.value && styles.optionButtonActive
+                  ]}
                 >
-                  <Text style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: learningStyle === style.value ? '#FFFFFF' : '#6B7280',
-                  }}>
+                  <Text style={[
+                    styles.optionText,
+                    learningStyle === style.value && styles.optionTextActive
+                  ]}>
                     {style.label}
                   </Text>
                 </TouchableOpacity>
@@ -530,35 +609,22 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           </View>
 
           {/* Grade Level */}
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
-              Grade Level
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+          <View style={styles.optionSection}>
+            <Text style={styles.optionLabel}>Grade Level</Text>
+            <View style={styles.optionsContainer}>
               {GRADE_LEVELS.map((level) => (
                 <TouchableOpacity
                   key={level}
                   onPress={() => setGradeLevel(level)}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: gradeLevel === level ? '#6366F1' : '#F9FAFB',
-                    borderWidth: 2,
-                    borderColor: gradeLevel === level ? '#6366F1' : '#E5E7EB',
-                    borderRadius: 24,
-                    margin: 4,
-                  }}
+                  style={[
+                    styles.optionButton,
+                    gradeLevel === level && styles.optionButtonActive
+                  ]}
                 >
-                  <Text style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: gradeLevel === level ? '#FFFFFF' : '#6B7280',
-                  }}>
+                  <Text style={[
+                    styles.optionText,
+                    gradeLevel === level && styles.optionTextActive
+                  ]}>
                     {level}
                   </Text>
                 </TouchableOpacity>
@@ -567,35 +633,22 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           </View>
 
           {/* Subjects */}
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: '#374151',
-              marginBottom: 12,
-            }}>
-              Subjects
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
+          <View style={styles.optionSection}>
+            <Text style={styles.optionLabel}>Subjects</Text>
+            <View style={styles.optionsContainer}>
               {COMMON_SUBJECTS.map((subject) => (
                 <TouchableOpacity
                   key={subject}
                   onPress={() => toggleSubject(subject)}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: selectedSubjects.includes(subject) ? '#6366F1' : '#F9FAFB',
-                    borderWidth: 2,
-                    borderColor: selectedSubjects.includes(subject) ? '#6366F1' : '#E5E7EB',
-                    borderRadius: 24,
-                    margin: 4,
-                  }}
+                  style={[
+                    styles.optionButton,
+                    selectedSubjects.includes(subject) && styles.optionButtonActive
+                  ]}
                 >
-                  <Text style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: selectedSubjects.includes(subject) ? '#FFFFFF' : '#6B7280',
-                  }}>
+                  <Text style={[
+                    styles.optionText,
+                    selectedSubjects.includes(subject) && styles.optionTextActive
+                  ]}>
                     {subject}
                   </Text>
                 </TouchableOpacity>
@@ -630,6 +683,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
               </View>
             ) : bookmarks.length === 0 ? (
               <View style={styles.emptyContainer}>
+                <Ionicons name="bookmark-outline" size={48} color="#D1D5DB" />
                 <Text style={styles.emptyText}>You haven't bookmarked any posts yet.</Text>
               </View>
             ) : (
@@ -656,6 +710,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
               </View>
             ) : userPosts.length === 0 ? (
               <View style={styles.emptyContainer}>
+                <Ionicons name="document-text-outline" size={48} color="#D1D5DB" />
                 <Text style={styles.emptyText}>You haven't created any posts yet.</Text>
                 <TouchableOpacity
                   onPress={() => navigator.navigate('CreatePost')}
@@ -676,7 +731,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
             title="Save Changes"
             onPress={handleSave}
             loading={loading}
-            style={{ marginTop: 8, marginBottom: 16 }}
+            style={styles.saveButton}
           />
 
           {/* Sign Out Button */}
@@ -684,6 +739,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
             title="Sign Out"
             onPress={handleSignOut}
             variant="outline"
+            style={styles.signOutButton}
           />
         </View>
       </ScrollView>
@@ -692,6 +748,204 @@ export const ProfileEditScreen = ({ navigation }: any) => {
 };
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  content: {
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  // Stats Card Styles
+  statsCard: {
+    marginBottom: 24,
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  statsGradient: {
+    padding: 20,
+  },
+  levelSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  levelBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  levelBadgeText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  xpText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  progressBarContainer: {
+    marginBottom: 20,
+  },
+  progressBarBackground: {
+    height: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 4,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  quickActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  // Avatar Styles
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  avatarContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
+    fontSize: 48,
+  },
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  avatarHint: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  // Option Section Styles
+  optionSection: {
+    marginBottom: 16,
+  },
+  optionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  optionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+  },
+  optionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 24,
+    margin: 4,
+  },
+  optionButtonActive: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  optionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  optionTextActive: {
+    color: '#FFFFFF',
+  },
+  // Section Styles
   section: {
     marginBottom: 24,
   },
@@ -720,6 +974,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#6366F1',
   },
+  // Posts Styles
   postsContainer: {
     marginBottom: 8,
   },
@@ -800,6 +1055,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginLeft: 4,
   },
+  // Bookmarks Styles
   bookmarksContainer: {
     marginBottom: 8,
   },
@@ -821,6 +1077,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
+  // Loading & Empty States
   loadingContainer: {
     padding: 20,
     alignItems: 'center',
@@ -830,12 +1087,13 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   emptyContainer: {
-    padding: 20,
+    padding: 32,
     alignItems: 'center',
   },
   emptyText: {
     fontSize: 16,
     color: '#6B7280',
+    marginTop: 16,
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -848,5 +1106,13 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  // Button Styles
+  saveButton: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  signOutButton: {
+    marginBottom: 16,
   },
 });
