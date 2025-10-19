@@ -22,8 +22,7 @@ import {
   voteOnQuestion, 
   voteOnAnswer, 
   acceptAnswer,
-  createAnswer,
-  createQuestionComment
+  createAnswer
 } from '../../services/supabase';
 import { generateAnswer } from '../../services/communityAI';
 import { CommunityQuestion, QuestionAnswer, AppStackParamList } from '../../types';
@@ -52,9 +51,6 @@ export const QuestionDetailScreen: React.FC = () => {
   const [answerText, setAnswerText] = useState('');
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [submittingComment, setSubmittingComment] = useState(false);
-  const [showCommentInput, setShowCommentInput] = useState(false);
 
   // Load question and answers
   const loadQuestionAndAnswers = useCallback(async () => {
@@ -240,33 +236,6 @@ export const QuestionDetailScreen: React.FC = () => {
     }
   }, [user, currentQuestion]);
 
-  // Handle submit comment
-  const handleSubmitComment = useCallback(async () => {
-    if (!user || !commentText.trim()) return;
-    
-    try {
-      setSubmittingComment(true);
-      
-      await createQuestionComment({
-        question_id: questionId,
-        user_id: user.id,
-        content: commentText.trim(),
-      });
-      
-      setCommentText('');
-      setShowCommentInput(false);
-      
-      Alert.alert('Success', 'Comment posted successfully');
-      // Reload to get the updated comments
-      loadQuestionAndAnswers();
-    } catch (error) {
-      console.error('Error creating comment:', error);
-      Alert.alert('Error', 'Failed to post comment. Please try again.');
-    } finally {
-      setSubmittingComment(false);
-    }
-  }, [user, commentText, questionId, loadQuestionAndAnswers]);
-
   if (!currentQuestion) {
     return <LoadingSpinner />;
   }
@@ -357,14 +326,6 @@ export const QuestionDetailScreen: React.FC = () => {
                 {currentQuestion.downvotes}
               </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.commentButton}
-              onPress={() => setShowCommentInput(!showCommentInput)}
-            >
-              <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
-              <Text style={styles.commentButtonText}>Comment</Text>
-            </TouchableOpacity>
           </View>
           
           {currentQuestion.has_accepted_answer && (
@@ -374,39 +335,6 @@ export const QuestionDetailScreen: React.FC = () => {
             </View>
           )}
         </View>
-
-        {/* Comment Input */}
-        {showCommentInput && (
-          <View style={styles.commentInputContainer}>
-            <TextInput
-              value={commentText}
-              onChangeText={setCommentText}
-              placeholder="Add a comment..."
-              multiline
-              style={styles.commentInput}
-            />
-            <View style={styles.commentActions}>
-              <TouchableOpacity
-                onPress={() => setShowCommentInput(false)}
-                style={styles.cancelButton}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleSubmitComment}
-                disabled={submittingComment || !commentText.trim()}
-                style={[
-                  styles.submitButton,
-                  { opacity: (submittingComment || !commentText.trim()) ? 0.5 : 1 }
-                ]}
-              >
-                <Text style={styles.submitButtonText}>
-                  {submittingComment ? 'Posting...' : 'Post'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
 
         {/* Answers Section */}
         <View style={styles.answersSection}>
@@ -585,20 +513,6 @@ const styles = StyleSheet.create({
   downvotedButtonText: {
     color: '#FFFFFF',
   },
-  commentButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F3F4F6',
-  },
-  commentButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-    marginLeft: 4,
-  },
   acceptedAnswerIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -609,48 +523,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#10B981',
     marginLeft: 4,
-  },
-  commentInputContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  commentInput: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    marginBottom: 12,
-  },
-  commentActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  cancelButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  submitButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  submitButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#FFFFFF',
   },
   answersSection: {
     marginBottom: 16,
