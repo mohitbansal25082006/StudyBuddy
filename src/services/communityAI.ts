@@ -460,3 +460,208 @@ export const simpleImageModeration = async (
     return { isAppropriate: true };
   }
 };
+
+// AI Answer Assistant
+export const generateAnswer = async (question: string, userProfile: any): Promise<string> => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI assistant that provides helpful, accurate answers to educational questions. Provide a comprehensive answer that is easy to understand and follows community guidelines."
+        },
+        {
+          role: "user",
+          content: `Provide a helpful answer to this question: "${question}". The user's profile: ${JSON.stringify(userProfile)}`
+        }
+      ],
+      temperature: 0.5,
+      max_tokens: 500,
+    });
+    return response.choices[0].message.content || "I'm sorry, I don't have an answer for that question.";
+  } catch (error) {
+    console.error('Error generating answer:', error);
+    return "I'm sorry, I don't have an answer for that question.";
+  }
+};
+
+// AI Difficulty Estimator
+export const estimateQuestionDifficulty = async (title: string, content: string): Promise<'easy' | 'medium' | 'hard'> => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI assistant that estimates the difficulty of educational questions. Respond with only one of these words: 'easy', 'medium', or 'hard'."
+        },
+        {
+          role: "user",
+          content: `Estimate the difficulty of this question:\n\nTitle: "${title}"\n\nContent: "${content}"`
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 10,
+    });
+    const difficulty = response.choices[0].message.content?.trim().toLowerCase();
+    if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
+      return difficulty;
+    }
+    return 'medium'; // Default fallback
+  } catch (error) {
+    console.error('Error estimating difficulty:', error);
+    return 'medium'; // Default fallback
+  }
+};
+
+// AI Context Booster
+export const enhanceQuestion = async (title: string, content: string): Promise<string> => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI assistant that enhances vague questions by adding more context and details to make them clearer and more specific. Keep the original intent but add helpful context."
+        },
+        {
+          role: "user",
+          content: `Enhance this vague question to make it clearer and more specific:\n\nTitle: "${title}"\n\nContent: "${content}"`
+        }
+      ],
+      temperature: 0.5,
+      max_tokens: 300,
+    });
+    return response.choices[0].message.content || content;
+  } catch (error) {
+    console.error('Error enhancing question:', error);
+    return content;
+  }
+};
+
+// AI Badge Recommender
+export const recommendAchievements = async (userProfile: any, userXP: number): Promise<any[]> => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI assistant that recommends achievements for students based on their profile and XP. Return a JSON array of achievement objects with id, name, description, and icon fields. Make sure the response is valid JSON without any additional text."
+        },
+        {
+          role: "user",
+          content: `Recommend achievements for this user with ${userXP} XP: ${JSON.stringify(userProfile)}`
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 300,
+    });
+    
+    const content = response.choices[0].message.content || '[]';
+    
+    // Try to extract JSON from the response
+    let jsonStr = content;
+    
+    // Check if the response contains JSON within backticks or other formatting
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || 
+                     content.match(/\[[\s\S]*\]/) ||
+                     content.match(/{[\s\S]*}/);
+    
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1] || jsonMatch[0];
+    }
+    
+    // Clean up the string to ensure it's valid JSON
+    jsonStr = jsonStr.trim();
+    
+    // Try to parse the JSON
+    try {
+      return JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.error('Error parsing JSON from OpenAI:', parseError);
+      console.log('Original content:', content);
+      console.log('Extracted JSON string:', jsonStr);
+      
+      // Return fallback achievements if parsing fails
+      return getFallbackAchievements(userXP);
+    }
+  } catch (error) {
+    console.error('Error recommending achievements:', error);
+    return getFallbackAchievements(userXP);
+  }
+};
+
+// Fallback achievements function
+const getFallbackAchievements = (userXP: number): any[] => {
+  const baseAchievements = [
+    {
+      id: 'first_question',
+      name: 'Curious Mind',
+      description: 'Ask your first question',
+      icon: '❓'
+    },
+    {
+      id: 'first_answer',
+      name: 'Helpful Helper',
+      description: 'Provide your first answer',
+      icon: '💡'
+    },
+    {
+      id: 'first_accepted',
+      name: 'Expert Answer',
+      description: 'Have your answer accepted',
+      icon: '✅'
+    },
+    {
+      id: 'week_streak',
+      name: 'Consistent Learner',
+      description: 'Study for 7 days in a row',
+      icon: '🔥'
+    },
+    {
+      id: 'level_5',
+      name: 'Rising Star',
+      description: 'Reach level 5',
+      icon: '⭐'
+    }
+  ];
+  
+  // Filter achievements based on XP
+  if (userXP < 50) {
+    return baseAchievements.slice(0, 2);
+  } else if (userXP < 200) {
+    return baseAchievements.slice(0, 3);
+  } else if (userXP < 500) {
+    return baseAchievements.slice(0, 4);
+  } else {
+    return baseAchievements;
+  }
+};
+
+// AI Motivation Engine
+export const generateMotivationalMessage = async (userRank: number, totalUsers: number, userXP: number): Promise<string> => {
+  try {
+    const percentile = Math.round((1 - userRank / totalUsers) * 100);
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI assistant that generates motivational messages for students based on their progress and ranking. Be encouraging and specific."
+        },
+        {
+          role: "user",
+          content: `Generate a motivational message for a student who is ranked ${userRank} out of ${totalUsers} (top ${percentile}%) with ${userXP} XP.`
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 150,
+    });
+    return response.choices[0].message.content || "Keep up the great work!";
+  } catch (error) {
+    console.error('Error generating motivational message:', error);
+    return "Keep up the great work!";
+  }
+};

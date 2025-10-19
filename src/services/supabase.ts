@@ -1,10 +1,3 @@
-// F:\StudyBuddy\src\services\supabase.ts
-// F:\StudyBuddy\src\services\supabase.ts
-// ============================================
-// SUPABASE CLIENT CONFIGURATION
-// This connects our app to Supabase
-// ============================================
-
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
@@ -16,13 +9,12 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 // Create Supabase client with AsyncStorage for session persistence
-// This means users stay logged in even after closing the app
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage, // Save auth tokens here
-    autoRefreshToken: true, // Auto-refresh when token expires
-    persistSession: true,   // Keep session after app restart
-    detectSessionInUrl: false, // We don't use URL-based auth
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
   },
 });
 
@@ -30,14 +22,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // AUTH HELPER FUNCTIONS
 // ============================================
 
-// Sign up with email and password
 export const signUp = async (email: string, password: string, fullName: string) => {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
-        full_name: fullName, // This gets passed to our trigger
+        full_name: fullName,
       },
     },
   });
@@ -46,7 +37,6 @@ export const signUp = async (email: string, password: string, fullName: string) 
   return data;
 };
 
-// Sign in with email and password
 export const signIn = async (email: string, password: string) => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -57,22 +47,19 @@ export const signIn = async (email: string, password: string) => {
   return data;
 };
 
-// Sign out
 export const signOut = async () => {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 };
 
-// Send password reset email
 export const resetPassword = async (email: string) => {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: 'studybuddy://reset-password', // Deep link for app
+    redirectTo: 'studybuddy://reset-password',
   });
 
   if (error) throw error;
 };
 
-// Get current session
 export const getSession = async () => {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
@@ -83,7 +70,6 @@ export const getSession = async () => {
 // PROFILE HELPER FUNCTIONS
 // ============================================
 
-// Get user profile
 export const getProfile = async (userId: string) => {
   const { data, error } = await supabase
     .from('profiles')
@@ -95,7 +81,6 @@ export const getProfile = async (userId: string) => {
   return data;
 };
 
-// Update user profile
 export const updateProfile = async (userId: string, updates: any) => {
   const { data, error } = await supabase
     .from('profiles')
@@ -108,18 +93,12 @@ export const updateProfile = async (userId: string, updates: any) => {
   return data;
 };
 
-// Upload avatar image - FIXED VERSION
 export const uploadAvatar = async (userId: string, uri: string) => {
   try {
-    // Get file extension from URI
     const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/avatar-${Date.now()}.${fileExt}`;
-
-    // Fetch the image as a blob using XMLHttpRequest (works in React Native)
     const response = await fetch(uri);
     const blob = await response.blob();
-
-    // Convert blob to ArrayBuffer
     const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -133,13 +112,12 @@ export const uploadAvatar = async (userId: string, uri: string) => {
       reader.readAsArrayBuffer(blob);
     });
 
-    // Upload to Supabase Storage
     const { data, error } = await supabase.storage
       .from('avatars')
       .upload(fileName, arrayBuffer, {
         contentType: `image/${fileExt}`,
         cacheControl: '3600',
-        upsert: true, // Replace if exists
+        upsert: true,
       });
 
     if (error) {
@@ -147,7 +125,6 @@ export const uploadAvatar = async (userId: string, uri: string) => {
       throw error;
     }
 
-    // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from('avatars')
       .getPublicUrl(fileName);
@@ -163,7 +140,6 @@ export const uploadAvatar = async (userId: string, uri: string) => {
 // STUDY PLAN HELPER FUNCTIONS
 // ============================================
 
-// Get all study plans for a user
 export const getStudyPlans = async (userId: string) => {
   const { data, error } = await supabase
     .from('study_plans')
@@ -175,7 +151,6 @@ export const getStudyPlans = async (userId: string) => {
   return data;
 };
 
-// Get a specific study plan
 export const getStudyPlan = async (planId: string) => {
   const { data, error } = await supabase
     .from('study_plans')
@@ -187,7 +162,6 @@ export const getStudyPlan = async (planId: string) => {
   return data;
 };
 
-// Create a new study plan
 export const createStudyPlan = async (plan: any) => {
   const { data, error } = await supabase
     .from('study_plans')
@@ -203,7 +177,6 @@ export const createStudyPlan = async (plan: any) => {
   return data;
 };
 
-// Update a study plan
 export const updateStudyPlan = async (planId: string, updates: any) => {
   const { data, error } = await supabase
     .from('study_plans')
@@ -219,7 +192,6 @@ export const updateStudyPlan = async (planId: string, updates: any) => {
   return data;
 };
 
-// Delete a study plan
 export const deleteStudyPlan = async (planId: string) => {
   const { error } = await supabase
     .from('study_plans')
@@ -234,7 +206,6 @@ export const deleteStudyPlan = async (planId: string) => {
 // FLASHCARD HELPER FUNCTIONS
 // ============================================
 
-// Get all flashcards for a user
 export const getFlashcards = async (userId: string, subject?: string) => {
   let query = supabase
     .from('flashcards')
@@ -252,7 +223,6 @@ export const getFlashcards = async (userId: string, subject?: string) => {
   return data;
 };
 
-// Get flashcards due for review
 export const getFlashcardsForReview = async (userId: string, subject?: string) => {
   const now = new Date().toISOString();
   let query = supabase
@@ -272,7 +242,6 @@ export const getFlashcardsForReview = async (userId: string, subject?: string) =
   return data;
 };
 
-// Get all flashcards for a user (not just due ones)
 export const getAllFlashcards = async (userId: string, subject?: string) => {
   let query = supabase
     .from('flashcards')
@@ -290,7 +259,6 @@ export const getAllFlashcards = async (userId: string, subject?: string) => {
   return data;
 };
 
-// Create a new flashcard
 export const createFlashcard = async (flashcard: any) => {
   const { data, error } = await supabase
     .from('flashcards')
@@ -305,7 +273,6 @@ export const createFlashcard = async (flashcard: any) => {
   return data;
 };
 
-// Update a flashcard
 export const updateFlashcard = async (cardId: string, updates: any) => {
   const { data, error } = await supabase
     .from('flashcards')
@@ -318,7 +285,6 @@ export const updateFlashcard = async (cardId: string, updates: any) => {
   return data;
 };
 
-// Delete a flashcard
 export const deleteFlashcard = async (cardId: string) => {
   const { error } = await supabase
     .from('flashcards')
@@ -329,57 +295,48 @@ export const deleteFlashcard = async (cardId: string) => {
   return true;
 };
 
-// Get flashcard statistics
 export const getFlashcardStats = async (userId: string) => {
-  // Get today's date at midnight
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayString = today.toISOString();
-  
-  // Get yesterday's date at midnight
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayString = yesterday.toISOString();
-  
+
   try {
-    // Get total flashcards
     const { data: totalCards, error: totalError } = await supabase
       .from('flashcards')
       .select('id')
       .eq('user_id', userId);
-    
+
     if (totalError) throw totalError;
-    
-    // Get flashcards due today
+
     const { data: dueCards, error: dueError } = await supabase
       .from('flashcards')
       .select('id')
       .eq('user_id', userId)
       .lte('next_review', new Date().toISOString());
-    
+
     if (dueError) throw dueError;
-    
-    // Get mastered flashcards
+
     const { data: masteredCards, error: masteredError } = await supabase
       .from('flashcards')
       .select('id')
       .eq('user_id', userId)
       .gte('correct_count', 5)
       .gte('review_count', 5);
-    
+
     if (masteredError) throw masteredError;
-    
-    // Get today's study sessions
+
     const { data: todaySessions, error: sessionsError } = await supabase
       .from('study_sessions')
       .select('completed_at')
       .eq('user_id', userId)
       .gte('completed_at', todayString)
       .eq('session_type', 'flashcards');
-    
+
     if (sessionsError) throw sessionsError;
-    
-    // Get yesterday's study sessions
+
     const { data: yesterdaySessions, error: yesterdaySessionsError } = await supabase
       .from('study_sessions')
       .select('completed_at')
@@ -387,24 +344,21 @@ export const getFlashcardStats = async (userId: string) => {
       .gte('completed_at', yesterdayString)
       .lt('completed_at', todayString)
       .eq('session_type', 'flashcards');
-    
+
     if (yesterdaySessionsError) throw yesterdaySessionsError;
-    
-    // Calculate current streak
+
     let currentStreak = 0;
     if (todaySessions.length > 0) {
       currentStreak = 1;
-      
-      // Check previous days to extend streak
       let checkDate = new Date(yesterday);
       let streakContinues = true;
-      
+
       while (streakContinues) {
         const startDate = new Date(checkDate);
         startDate.setHours(0, 0, 0, 0);
         const endDate = new Date(checkDate);
         endDate.setHours(23, 59, 59, 999);
-        
+
         const { data: daySessions, error: dayError } = await supabase
           .from('study_sessions')
           .select('completed_at')
@@ -412,9 +366,9 @@ export const getFlashcardStats = async (userId: string) => {
           .gte('completed_at', startDate.toISOString())
           .lte('completed_at', endDate.toISOString())
           .eq('session_type', 'flashcards');
-        
+
         if (dayError) throw dayError;
-        
+
         if (daySessions.length > 0) {
           currentStreak++;
           checkDate.setDate(checkDate.getDate() - 1);
@@ -423,14 +377,14 @@ export const getFlashcardStats = async (userId: string) => {
         }
       }
     }
-    
+
     return {
       totalCards: totalCards.length,
       dueCards: dueCards.length,
       masteredCards: masteredCards.length,
       todaySessions: todaySessions.length,
-      lastStudyDate: todaySessions.length > 0 ? todayString : 
-                   yesterdaySessions.length > 0 ? yesterdayString : null,
+      lastStudyDate: todaySessions.length > 0 ? todayString :
+        yesterdaySessions.length > 0 ? yesterdayString : null,
       currentStreak,
     };
   } catch (error) {
@@ -443,7 +397,6 @@ export const getFlashcardStats = async (userId: string) => {
 // STUDY SESSION HELPER FUNCTIONS
 // ============================================
 
-// Get all study sessions for a user
 export const getStudySessions = async (userId: string, limit?: number) => {
   let query = supabase
     .from('study_sessions')
@@ -461,10 +414,8 @@ export const getStudySessions = async (userId: string, limit?: number) => {
   return data;
 };
 
-// Create a new study session - FIXED VERSION
 export const createStudySession = async (session: any) => {
   try {
-    // First, try to create the session with all fields
     const { data, error } = await supabase
       .from('study_sessions')
       .insert({
@@ -474,7 +425,6 @@ export const createStudySession = async (session: any) => {
         session_type: session.session_type || 'study_plan',
         notes: session.notes || null,
         completed_at: new Date().toISOString(),
-        // Try to include these fields if they exist in the schema
         ...(session.tasks_completed && { tasks_completed: session.tasks_completed }),
         ...(session.resources_used && { resources_used: session.resources_used }),
         ...(session.study_plan_id && { study_plan_id: session.study_plan_id }),
@@ -483,7 +433,6 @@ export const createStudySession = async (session: any) => {
       .single();
 
     if (error) {
-      // If the error is about a missing column, try without those fields
       if (error.code === 'PGRST204') {
         console.warn('Some columns not found in study_sessions table, using fallback');
         const { data: fallbackData, error: fallbackError } = await supabase
@@ -498,13 +447,13 @@ export const createStudySession = async (session: any) => {
           })
           .select()
           .single();
-        
+
         if (fallbackError) throw fallbackError;
         return fallbackData;
       }
       throw error;
     }
-    
+
     return data;
   } catch (error) {
     console.error('Error creating study session:', error);
@@ -516,7 +465,6 @@ export const createStudySession = async (session: any) => {
 // CALENDAR EVENT HELPER FUNCTIONS
 // ============================================
 
-// Get all calendar events for a user
 export const getCalendarEvents = async (userId: string, startDate?: string, endDate?: string) => {
   let query = supabase
     .from('calendar_events')
@@ -538,7 +486,6 @@ export const getCalendarEvents = async (userId: string, startDate?: string, endD
   return data;
 };
 
-// Get a specific calendar event
 export const getCalendarEvent = async (eventId: string) => {
   const { data, error } = await supabase
     .from('calendar_events')
@@ -550,7 +497,6 @@ export const getCalendarEvent = async (eventId: string) => {
   return data;
 };
 
-// Create a new calendar event
 export const createCalendarEvent = async (event: any) => {
   const { data, error } = await supabase
     .from('calendar_events')
@@ -565,7 +511,6 @@ export const createCalendarEvent = async (event: any) => {
   return data;
 };
 
-// Update a calendar event
 export const updateCalendarEvent = async (eventId: string, updates: any) => {
   const { data, error } = await supabase
     .from('calendar_events')
@@ -578,7 +523,6 @@ export const updateCalendarEvent = async (eventId: string, updates: any) => {
   return data;
 };
 
-// Delete a calendar event
 export const deleteCalendarEvent = async (eventId: string) => {
   const { error } = await supabase
     .from('calendar_events')
@@ -593,9 +537,7 @@ export const deleteCalendarEvent = async (eventId: string) => {
 // PROGRESS TRACKING HELPER FUNCTIONS
 // ============================================
 
-// Get progress data for all subjects
 export const getSubjectProgress = async (userId: string) => {
-  // Get study sessions data
   const { data: sessions, error: sessionsError } = await supabase
     .from('study_sessions')
     .select('subject, duration_minutes, completed_at')
@@ -603,7 +545,6 @@ export const getSubjectProgress = async (userId: string) => {
 
   if (sessionsError) throw sessionsError;
 
-  // Get flashcard data
   const { data: flashcards, error: flashcardsError } = await supabase
     .from('flashcards')
     .select('subject, review_count, correct_count, created_at')
@@ -611,10 +552,8 @@ export const getSubjectProgress = async (userId: string) => {
 
   if (flashcardsError) throw flashcardsError;
 
-  // Process the data to calculate progress for each subject
   const subjectMap = new Map();
 
-  // Process study sessions
   sessions.forEach(session => {
     const subject = session.subject;
     if (!subjectMap.has(subject)) {
@@ -633,13 +572,11 @@ export const getSubjectProgress = async (userId: string) => {
     subjectData.total_minutes += session.duration_minutes;
     subjectData.session_count += 1;
 
-    // Update last studied date if this session is more recent
     if (new Date(session.completed_at) > new Date(subjectData.last_studied)) {
       subjectData.last_studied = session.completed_at;
     }
   });
 
-  // Process flashcards
   flashcards.forEach(card => {
     const subject = card.subject;
     if (!subjectMap.has(subject)) {
@@ -660,14 +597,13 @@ export const getSubjectProgress = async (userId: string) => {
     subjectData.total_reviews += card.review_count;
   });
 
-  // Convert to array and calculate accuracy rate
   const progressData = Array.from(subjectMap.values()).map(data => ({
     subject: data.subject,
     total_minutes: data.total_minutes,
     session_count: data.session_count,
     flashcard_count: data.flashcard_count,
-    accuracy_rate: data.total_reviews > 0 
-      ? Math.round((data.correct_reviews / data.total_reviews) * 100) 
+    accuracy_rate: data.total_reviews > 0
+      ? Math.round((data.correct_reviews / data.total_reviews) * 100)
       : 0,
     last_studied: data.last_studied,
   }));
@@ -679,7 +615,6 @@ export const getSubjectProgress = async (userId: string) => {
 // ENHANCED STUDY PLAN HELPER FUNCTIONS
 // ============================================
 
-// Get study plan categories - HANDLES MISSING TABLE
 export const getStudyPlanCategories = async () => {
   try {
     const { data, error } = await supabase
@@ -688,7 +623,6 @@ export const getStudyPlanCategories = async () => {
       .order('name', { ascending: true });
 
     if (error) {
-      // If table doesn't exist, return empty array
       if (error.code === 'PGRST205') {
         console.warn('Study plan categories table does not exist, using empty array');
         return [];
@@ -702,7 +636,6 @@ export const getStudyPlanCategories = async () => {
   }
 };
 
-// Get user study plan preferences - HANDLES MISSING TABLE
 export const getStudyPlanPreferences = async (userId: string) => {
   try {
     const { data, error } = await supabase
@@ -712,7 +645,6 @@ export const getStudyPlanPreferences = async (userId: string) => {
       .single();
 
     if (error) {
-      // If table doesn't exist or no preferences found, return null
       if (error.code === 'PGRST116' || error.code === 'PGRST205') {
         console.warn('Study plan preferences table does not exist or no preferences found');
         return null;
@@ -726,7 +658,6 @@ export const getStudyPlanPreferences = async (userId: string) => {
   }
 };
 
-// Update user study plan preferences - HANDLES MISSING TABLE
 export const updateStudyPlanPreferences = async (userId: string, preferences: any) => {
   try {
     const { data, error } = await supabase
@@ -740,7 +671,6 @@ export const updateStudyPlanPreferences = async (userId: string, preferences: an
       .single();
 
     if (error) {
-      // If table doesn't exist, just return the preferences without saving
       if (error.code === 'PGRST205') {
         console.warn('Study plan preferences table does not exist, preferences not saved');
         return preferences;
@@ -754,9 +684,7 @@ export const updateStudyPlanPreferences = async (userId: string, preferences: an
   }
 };
 
-// Add custom resources to a study plan
 export const addCustomResources = async (planId: string, resources: any[]) => {
-  // First, get the current plan
   const { data: plan, error: planError } = await supabase
     .from('study_plans')
     .select('plan_data')
@@ -765,13 +693,11 @@ export const addCustomResources = async (planId: string, resources: any[]) => {
 
   if (planError) throw planError;
 
-  // Update the plan_data with new resources
   const updatedPlanData = {
     ...plan.plan_data,
     resources: [...plan.plan_data.resources, ...resources],
   };
 
-  // Update the study plan
   const { data, error } = await supabase
     .from('study_plans')
     .update({
@@ -786,9 +712,7 @@ export const addCustomResources = async (planId: string, resources: any[]) => {
   return data;
 };
 
-// Add custom tasks to a specific week in a study plan
 export const addCustomTasks = async (planId: string, weekIndex: number, tasks: any[]) => {
-  // First, get the current plan
   const { data: plan, error: planError } = await supabase
     .from('study_plans')
     .select('plan_data')
@@ -797,14 +721,12 @@ export const addCustomTasks = async (planId: string, weekIndex: number, tasks: a
 
   if (planError) throw planError;
 
-  // Update the plan_data with new tasks
   const updatedPlanData = { ...plan.plan_data };
   updatedPlanData.weeks[weekIndex].tasks = [
     ...updatedPlanData.weeks[weekIndex].tasks,
     ...tasks,
   ];
 
-  // Update the study plan
   const { data, error } = await supabase
     .from('study_plans')
     .update({
@@ -819,9 +741,7 @@ export const addCustomTasks = async (planId: string, weekIndex: number, tasks: a
   return data;
 };
 
-// Rate a resource
 export const rateResource = async (planId: string, resourceId: string, rating: number) => {
-  // First, get the current plan
   const { data: plan, error: planError } = await supabase
     .from('study_plans')
     .select('plan_data')
@@ -830,15 +750,13 @@ export const rateResource = async (planId: string, resourceId: string, rating: n
 
   if (planError) throw planError;
 
-  // Update the resource rating
   const updatedPlanData = { ...plan.plan_data };
   const resourceIndex = updatedPlanData.resources.findIndex((r: StudyResource) => r.id === resourceId);
-  
+
   if (resourceIndex !== -1) {
     updatedPlanData.resources[resourceIndex].user_rating = rating;
   }
 
-  // Update the study plan
   const { data, error } = await supabase
     .from('study_plans')
     .update({
@@ -853,9 +771,7 @@ export const rateResource = async (planId: string, resourceId: string, rating: n
   return data;
 };
 
-// Add notes to a task
 export const addTaskNotes = async (planId: string, weekIndex: number, taskIndex: number, notes: string) => {
-  // First, get the current plan
   const { data: plan, error: planError } = await supabase
     .from('study_plans')
     .select('plan_data')
@@ -864,11 +780,9 @@ export const addTaskNotes = async (planId: string, weekIndex: number, taskIndex:
 
   if (planError) throw planError;
 
-  // Update the task notes
   const updatedPlanData = { ...plan.plan_data };
   updatedPlanData.weeks[weekIndex].tasks[taskIndex].notes = notes;
 
-  // Update the study plan
   const { data, error } = await supabase
     .from('study_plans')
     .update({
@@ -883,10 +797,8 @@ export const addTaskNotes = async (planId: string, weekIndex: number, taskIndex:
   return data;
 };
 
-// Create a detailed study session
 export const createDetailedStudySession = async (session: any) => {
   try {
-    // First, try to create the session with all fields
     const { data, error } = await supabase
       .from('study_sessions')
       .insert({
@@ -896,7 +808,6 @@ export const createDetailedStudySession = async (session: any) => {
         session_type: session.session_type || 'study_plan',
         notes: session.notes || null,
         completed_at: new Date().toISOString(),
-        // Try to include these fields if they exist in the schema
         ...(session.tasks_completed && { tasks_completed: session.tasks_completed }),
         ...(session.resources_used && { resources_used: session.resources_used }),
         ...(session.study_plan_id && { study_plan_id: session.study_plan_id }),
@@ -905,7 +816,6 @@ export const createDetailedStudySession = async (session: any) => {
       .single();
 
     if (error) {
-      // If the error is about a missing column, try without those fields
       if (error.code === 'PGRST204') {
         console.warn('Some columns not found in study_sessions table, using fallback');
         const { data: fallbackData, error: fallbackError } = await supabase
@@ -920,13 +830,13 @@ export const createDetailedStudySession = async (session: any) => {
           })
           .select()
           .single();
-        
+
         if (fallbackError) throw fallbackError;
         return fallbackData;
       }
       throw error;
     }
-    
+
     return data;
   } catch (error) {
     console.error('Error creating detailed study session:', error);
@@ -934,10 +844,8 @@ export const createDetailedStudySession = async (session: any) => {
   }
 };
 
-// Get study sessions for a specific study plan
 export const getStudyPlanSessions = async (planId: string) => {
   try {
-    // First try with the study_plan_id column
     const { data, error } = await supabase
       .from('study_sessions')
       .select('*')
@@ -945,14 +853,13 @@ export const getStudyPlanSessions = async (planId: string) => {
       .order('completed_at', { ascending: false });
 
     if (error) {
-      // If the column doesn't exist, return empty array
       if (error.code === 'PGRST204') {
         console.warn('study_plan_id column not found in study_sessions table');
         return [];
       }
       throw error;
     }
-    
+
     return data;
   } catch (error) {
     console.error('Error getting study plan sessions:', error);
@@ -964,10 +871,8 @@ export const getStudyPlanSessions = async (planId: string) => {
 // RESOURCE VERIFICATION HELPER FUNCTIONS
 // ============================================
 
-// Verify a resource URL
 export const verifyResourceUrl = async (url: string): Promise<boolean> => {
   try {
-    // This is a simplified check - in a real app, you might want to use a more sophisticated method
     const response = await fetch(url, { method: 'HEAD' });
     return response.ok;
   } catch (error) {
@@ -977,16 +882,12 @@ export const verifyResourceUrl = async (url: string): Promise<boolean> => {
 };
 
 // ============================================
-// STUDY PLAN RECOMMENDATIONS - HANDLES MISSING TABLE
+// STUDY PLAN RECOMMENDATIONS
 // ============================================
 
-// Get recommended study plans based on user preferences
 export const getRecommendedStudyPlans = async (userId: string, limit: number = 5) => {
   try {
-    // Get user preferences
     const preferences = await getStudyPlanPreferences(userId);
-
-    // Get user's completed study plans to understand preferences
     const { data: completedPlans, error: plansError } = await supabase
       .from('study_plans')
       .select('subject, difficulty_level')
@@ -995,16 +896,14 @@ export const getRecommendedStudyPlans = async (userId: string, limit: number = 5
 
     if (plansError) throw plansError;
 
-    // Get all study plans
     let query = supabase
       .from('study_plans')
       .select('*')
-      .neq('user_id', userId) // Exclude user's own plans
-      .eq('public', true) // Only public plans
+      .neq('user_id', userId)
+      .eq('public', true)
       .order('rating', { ascending: false })
-      .limit(limit * 2); // Get more than needed to filter
+      .limit(limit * 2);
 
-    // Filter by user preferences if available
     if (preferences) {
       if (preferences.preferred_difficulty) {
         query = query.eq('difficulty_level', preferences.preferred_difficulty);
@@ -1017,21 +916,20 @@ export const getRecommendedStudyPlans = async (userId: string, limit: number = 5
     const { data, error } = await query;
 
     if (error) {
-      // If public column doesn't exist, try without it
       if (error.code === 'PGRST204') {
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('study_plans')
           .select('*')
-          .neq('user_id', userId) // Exclude user's own plans
+          .neq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(limit);
-        
+
         if (fallbackError) throw fallbackError;
         return fallbackData || [];
       }
       throw error;
     }
-    
+
     return data || [];
   } catch (error) {
     console.error('Error getting recommended study plans:', error);
@@ -1043,7 +941,6 @@ export const getRecommendedStudyPlans = async (userId: string, limit: number = 5
 // COMMUNITY FEED HELPER FUNCTIONS
 // ============================================
 
-// Get community posts
 export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1061,7 +958,7 @@ export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) 
       post_likes:user_id!post_likes(user_id),
       post_bookmarks:user_id!post_bookmarks(user_id)
     `)
-    .neq('user_id', userId) // Exclude user's own posts
+    .neq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -1069,9 +966,7 @@ export const getCommunityPosts = async (userId: string, limit = 20, offset = 0) 
   return data;
 };
 
-// Get a single community post with comments - FIXED VERSION
 export const getCommunityPostWithComments = async (postId: string, userId: string) => {
-  // Get the post
   const { data: post, error: postError } = await supabase
     .from('community_posts')
     .select(`
@@ -1093,7 +988,6 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
 
   if (postError) throw postError;
 
-  // Get comments for the post
   const { data: comments, error: commentsError } = await supabase
     .from('post_comments')
     .select(`
@@ -1109,9 +1003,7 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
 
   if (commentsError) throw commentsError;
 
-  // Process comments to include replies
   const processedComments = await Promise.all((comments || []).map(async (comment) => {
-    // Get replies for each comment
     const { data: replies } = await supabase
       .from('comment_replies')
       .select(`
@@ -1124,7 +1016,6 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
       .eq('comment_id', comment.id)
       .order('created_at', { ascending: true });
 
-    // Get reply likes for each reply - FIXED: Check if replies exists
     const repliesWithLikes = await Promise.all((replies || []).map(async (reply) => {
       const { data: replyLikes } = await supabase
         .from('reply_likes')
@@ -1148,9 +1039,7 @@ export const getCommunityPostWithComments = async (postId: string, userId: strin
   return { post, comments: processedComments };
 };
 
-// Create a new community post - FIXED VERSION
 export const createCommunityPost = async (post: any, imageUris?: string[]) => {
-  // Create the post first
   const { data: newPost, error: postError } = await supabase
     .from('community_posts')
     .insert({
@@ -1162,7 +1051,6 @@ export const createCommunityPost = async (post: any, imageUris?: string[]) => {
 
   if (postError) throw postError;
 
-  // If there are images, upload them
   if (imageUris && imageUris.length > 0) {
     await uploadPostImages(post.user_id, newPost.id, imageUris);
   }
@@ -1170,7 +1058,6 @@ export const createCommunityPost = async (post: any, imageUris?: string[]) => {
   return newPost;
 };
 
-// Update a community post
 export const updateCommunityPost = async (postId: string, updates: any) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1186,12 +1073,8 @@ export const updateCommunityPost = async (postId: string, updates: any) => {
   return data;
 };
 
-// Delete a community post
 export const deleteCommunityPost = async (postId: string) => {
-  // Delete images first
   await deletePostImages(postId);
-  
-  // Then delete the post
   const { error } = await supabase
     .from('community_posts')
     .delete()
@@ -1201,9 +1084,7 @@ export const deleteCommunityPost = async (postId: string) => {
   return true;
 };
 
-// Like or unlike a community post
 export const toggleCommunityPostLike = async (postId: string, userId: string) => {
-  // Check if user already liked the post
   const { data: existingLike } = await supabase
     .from('post_likes')
     .select('*')
@@ -1212,7 +1093,6 @@ export const toggleCommunityPostLike = async (postId: string, userId: string) =>
     .single();
 
   if (existingLike) {
-    // User already liked, so unlike
     const { error } = await supabase
       .from('post_likes')
       .delete()
@@ -1222,7 +1102,6 @@ export const toggleCommunityPostLike = async (postId: string, userId: string) =>
     if (error) throw error;
     return false;
   } else {
-    // User hasn't liked, so like
     const { error } = await supabase
       .from('post_likes')
       .insert({
@@ -1235,7 +1114,6 @@ export const toggleCommunityPostLike = async (postId: string, userId: string) =>
   }
 };
 
-// Create a comment on a community post
 export const createPostComment = async (comment: any) => {
   const { data, error } = await supabase
     .from('post_comments')
@@ -1250,9 +1128,7 @@ export const createPostComment = async (comment: any) => {
   return data;
 };
 
-// Like or unlike a comment
 export const toggleCommentLike = async (commentId: string, userId: string) => {
-  // Check if user already liked the comment
   const { data: existingLike } = await supabase
     .from('comment_likes')
     .select('*')
@@ -1261,7 +1137,6 @@ export const toggleCommentLike = async (commentId: string, userId: string) => {
     .single();
 
   if (existingLike) {
-    // User already liked, so unlike
     const { error } = await supabase
       .from('comment_likes')
       .delete()
@@ -1271,7 +1146,6 @@ export const toggleCommentLike = async (commentId: string, userId: string) => {
     if (error) throw error;
     return false;
   } else {
-    // User hasn't liked, so like
     const { error } = await supabase
       .from('comment_likes')
       .insert({
@@ -1284,7 +1158,6 @@ export const toggleCommentLike = async (commentId: string, userId: string) => {
   }
 };
 
-// Delete a comment
 export const deleteComment = async (commentId: string) => {
   const { error } = await supabase
     .from('post_comments')
@@ -1295,18 +1168,12 @@ export const deleteComment = async (commentId: string) => {
   return true;
 };
 
-// Upload post image - FIXED VERSION
 export const uploadPostImage = async (uri: string, userId: string) => {
   try {
-    // Get file extension from URI
     const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
     const fileName = `${userId}/post-${Date.now()}.${fileExt}`;
-
-    // Fetch the image as a blob
     const response = await fetch(uri);
     const blob = await response.blob();
-
-    // Convert blob to ArrayBuffer
     const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -1320,7 +1187,6 @@ export const uploadPostImage = async (uri: string, userId: string) => {
       reader.readAsArrayBuffer(blob);
     });
 
-    // Upload to Supabase Storage
     const { data, error } = await supabase.storage
       .from('community-images')
       .upload(fileName, arrayBuffer, {
@@ -1334,7 +1200,6 @@ export const uploadPostImage = async (uri: string, userId: string) => {
       throw error;
     }
 
-    // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from('community-images')
       .getPublicUrl(fileName);
@@ -1350,7 +1215,6 @@ export const uploadPostImage = async (uri: string, userId: string) => {
 // BOOKMARK HELPER FUNCTIONS
 // ============================================
 
-// Get user's bookmarked posts - FIXED VERSION
 export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) => {
   const { data, error } = await supabase
     .from('post_bookmarks')
@@ -1390,23 +1254,20 @@ export const getUserBookmarks = async (userId: string, limit = 20, offset = 0) =
   return data;
 };
 
-// Toggle bookmark on a post - FIXED VERSION
 export const togglePostBookmark = async (postId: string, userId: string) => {
   try {
-    // Check if user already bookmarked the post
     const { data: existingBookmark, error: checkError } = await supabase
       .from('post_bookmarks')
       .select('id')
       .eq('post_id', postId)
       .eq('user_id', userId)
-      .maybeSingle(); // Use maybeSingle instead of single to avoid error when not found
+      .maybeSingle();
 
     if (checkError && checkError.code !== 'PGRST116') {
       throw checkError;
     }
 
     if (existingBookmark) {
-      // User already bookmarked, so remove bookmark
       const { error: deleteError } = await supabase
         .from('post_bookmarks')
         .delete()
@@ -1416,7 +1277,6 @@ export const togglePostBookmark = async (postId: string, userId: string) => {
       if (deleteError) throw deleteError;
       return false;
     } else {
-      // User hasn't bookmarked, so add bookmark
       const { error: insertError } = await supabase
         .from('post_bookmarks')
         .insert({
@@ -1426,7 +1286,6 @@ export const togglePostBookmark = async (postId: string, userId: string) => {
         });
 
       if (insertError) {
-        // Handle duplicate key error specifically
         if (insertError.code === '23505') {
           console.warn('Bookmark already exists, treating as success');
           return true;
@@ -1445,7 +1304,6 @@ export const togglePostBookmark = async (postId: string, userId: string) => {
 // REPLY HELPER FUNCTIONS
 // ============================================
 
-// Get replies for a comment
 export const getCommentReplies = async (commentId: string) => {
   const { data, error } = await supabase
     .from('comment_replies')
@@ -1463,7 +1321,6 @@ export const getCommentReplies = async (commentId: string) => {
   return data;
 };
 
-// Create a new reply
 export const createReply = async (reply: any) => {
   const { data, error } = await supabase
     .from('comment_replies')
@@ -1478,7 +1335,6 @@ export const createReply = async (reply: any) => {
   return data;
 };
 
-// Update a reply
 export const updateReply = async (replyId: string, updates: any) => {
   const { data, error } = await supabase
     .from('comment_replies')
@@ -1494,7 +1350,6 @@ export const updateReply = async (replyId: string, updates: any) => {
   return data;
 };
 
-// Delete a reply
 export const deleteReply = async (replyId: string) => {
   const { error } = await supabase
     .from('comment_replies')
@@ -1505,9 +1360,7 @@ export const deleteReply = async (replyId: string) => {
   return true;
 };
 
-// Like or unlike a reply
 export const toggleReplyLike = async (replyId: string, userId: string) => {
-  // Check if user already liked the reply
   const { data: existingLike } = await supabase
     .from('reply_likes')
     .select('*')
@@ -1516,7 +1369,6 @@ export const toggleReplyLike = async (replyId: string, userId: string) => {
     .single();
 
   if (existingLike) {
-    // User already liked, so unlike
     const { error } = await supabase
       .from('reply_likes')
       .delete()
@@ -1526,7 +1378,6 @@ export const toggleReplyLike = async (replyId: string, userId: string) => {
     if (error) throw error;
     return false;
   } else {
-    // User hasn't liked, so like
     const { error } = await supabase
       .from('reply_likes')
       .insert({
@@ -1543,7 +1394,6 @@ export const toggleReplyLike = async (replyId: string, userId: string) => {
 // REPORT HELPER FUNCTIONS
 // ============================================
 
-// Create a new report
 export const createReport = async (report: any) => {
   const { data, error } = await supabase
     .from('content_reports')
@@ -1558,7 +1408,6 @@ export const createReport = async (report: any) => {
   return data;
 };
 
-// Get reports for a user
 export const getUserReports = async (userId: string) => {
   const { data, error } = await supabase
     .from('content_reports')
@@ -1570,7 +1419,6 @@ export const getUserReports = async (userId: string) => {
   return data;
 };
 
-// Update a report
 export const updateReport = async (reportId: string, updates: any) => {
   const { data, error } = await supabase
     .from('content_reports')
@@ -1590,7 +1438,6 @@ export const updateReport = async (reportId: string, updates: any) => {
 // POST IMAGES HELPER FUNCTIONS
 // ============================================
 
-// Get images for a post
 export const getPostImages = async (postId: string) => {
   const { data, error } = await supabase
     .from('post_images')
@@ -1602,23 +1449,17 @@ export const getPostImages = async (postId: string) => {
   return data;
 };
 
-// Upload multiple images for a post - FIXED VERSION
 export const uploadPostImages = async (userId: string, postId: string, uris: string[]) => {
   const uploadedImages = [];
-  
+
   for (let i = 0; i < uris.length; i++) {
     const uri = uris[i];
-    
+
     try {
-      // Get file extension from URI
       const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
       const fileName = `${userId}/post-${postId}-${i}.${fileExt}`;
-
-      // Fetch the image as a blob
       const response = await fetch(uri);
       const blob = await response.blob();
-
-      // Convert blob to ArrayBuffer
       const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -1632,7 +1473,6 @@ export const uploadPostImages = async (userId: string, postId: string, uris: str
         reader.readAsArrayBuffer(blob);
       });
 
-      // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('community-images')
         .upload(fileName, arrayBuffer, {
@@ -1643,12 +1483,10 @@ export const uploadPostImages = async (userId: string, postId: string, uris: str
 
       if (error) throw error;
 
-      // Get public URL
       const { data: publicUrlData } = supabase.storage
         .from('community-images')
         .getPublicUrl(fileName);
 
-      // Save to database
       const { data: imageData, error: imageError } = await supabase
         .from('post_images')
         .insert({
@@ -1660,48 +1498,42 @@ export const uploadPostImages = async (userId: string, postId: string, uris: str
         .single();
 
       if (imageError) throw imageError;
-      
+
       uploadedImages.push(imageData);
     } catch (error) {
       console.error(`Error uploading image ${i}:`, error);
-      // Continue with other images even if one fails
     }
   }
-  
+
   return uploadedImages;
 };
 
-// Delete images for a post
 export const deletePostImages = async (postId: string) => {
-  // First get all images for the post
   const { data: images, error: fetchError } = await supabase
     .from('post_images')
     .select('*')
     .eq('post_id', postId);
 
   if (fetchError) throw fetchError;
-  
-  // Delete each image from storage
+
   if (images) {
     for (const image of images) {
       try {
-        // Extract file path from URL
         const urlParts = image.image_url.split('/');
         const fileName = urlParts[urlParts.length - 1];
         const filePath = `${urlParts[urlParts.length - 2]}/${fileName}`;
-        
+
         const { error } = await supabase.storage
           .from('community-images')
           .remove([filePath]);
-          
+
         if (error) console.error('Error deleting image from storage:', error);
       } catch (error) {
         console.error('Error deleting image from storage:', error);
       }
     }
   }
-  
-  // Delete image records from database
+
   const { error } = await supabase
     .from('post_images')
     .delete()
@@ -1715,7 +1547,6 @@ export const deletePostImages = async (postId: string) => {
 // COMMUNITY GUIDELINES HELPER FUNCTIONS
 // ============================================
 
-// Get community guidelines
 export const getCommunityGuidelines = async () => {
   const { data, error } = await supabase
     .from('community_guidelines')
@@ -1728,7 +1559,6 @@ export const getCommunityGuidelines = async () => {
   return data;
 };
 
-// Update community guidelines
 export const updateCommunityGuidelines = async (id: string, updates: any) => {
   const { data, error } = await supabase
     .from('community_guidelines')
@@ -1748,7 +1578,6 @@ export const updateCommunityGuidelines = async (id: string, updates: any) => {
 // COMMUNITY SERVICE FUNCTIONS
 // ============================================
 
-// Get posts for community service
 export const getPosts = async (userId: string, limit = 20, offset = 0) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1766,7 +1595,7 @@ export const getPosts = async (userId: string, limit = 20, offset = 0) => {
       post_likes:user_id!post_likes(user_id),
       post_bookmarks:user_id!post_bookmarks(user_id)
     `)
-    .neq('user_id', userId) // Exclude user's own posts
+    .neq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -1774,9 +1603,7 @@ export const getPosts = async (userId: string, limit = 20, offset = 0) => {
   return data;
 };
 
-// Get post with comments for community service - FIXED VERSION
 export const getPostWithComments = async (postId: string, userId: string) => {
-  // Get the post
   const { data: post, error: postError } = await supabase
     .from('community_posts')
     .select(`
@@ -1798,7 +1625,6 @@ export const getPostWithComments = async (postId: string, userId: string) => {
 
   if (postError) throw postError;
 
-  // Get comments for the post
   const { data: comments, error: commentsError } = await supabase
     .from('post_comments')
     .select(`
@@ -1814,9 +1640,7 @@ export const getPostWithComments = async (postId: string, userId: string) => {
 
   if (commentsError) throw commentsError;
 
-  // Process comments to include replies
   const processedComments = await Promise.all((comments || []).map(async (comment) => {
-    // Get replies for each comment
     const { data: replies } = await supabase
       .from('comment_replies')
       .select(`
@@ -1829,7 +1653,6 @@ export const getPostWithComments = async (postId: string, userId: string) => {
       .eq('comment_id', comment.id)
       .order('created_at', { ascending: true });
 
-    // Get reply likes for each reply - FIXED: Check if replies exists
     const repliesWithLikes = await Promise.all((replies || []).map(async (reply) => {
       const { data: replyLikes } = await supabase
         .from('reply_likes')
@@ -1853,7 +1676,6 @@ export const getPostWithComments = async (postId: string, userId: string) => {
   return { post, comments: processedComments };
 };
 
-// Create post for community service
 export const createPost = async (post: any) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1868,7 +1690,6 @@ export const createPost = async (post: any) => {
   return data;
 };
 
-// Update post for community service
 export const updatePost = async (postId: string, updates: any) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1884,12 +1705,8 @@ export const updatePost = async (postId: string, updates: any) => {
   return data;
 };
 
-// Delete post for community service
 export const deletePost = async (postId: string) => {
-  // Delete images first
   await deletePostImages(postId);
-  
-  // Then delete the post
   const { error } = await supabase
     .from('community_posts')
     .delete()
@@ -1899,9 +1716,7 @@ export const deletePost = async (postId: string) => {
   return true;
 };
 
-// Toggle post like for community service
 export const togglePostLike = async (postId: string, userId: string) => {
-  // Check if user already liked the post
   const { data: existingLike } = await supabase
     .from('post_likes')
     .select('*')
@@ -1910,7 +1725,6 @@ export const togglePostLike = async (postId: string, userId: string) => {
     .single();
 
   if (existingLike) {
-    // User already liked, so unlike
     const { error } = await supabase
       .from('post_likes')
       .delete()
@@ -1920,7 +1734,6 @@ export const togglePostLike = async (postId: string, userId: string) => {
     if (error) throw error;
     return false;
   } else {
-    // User hasn't liked, so like
     const { error } = await supabase
       .from('post_likes')
       .insert({
@@ -1933,7 +1746,6 @@ export const togglePostLike = async (postId: string, userId: string) => {
   }
 };
 
-// Create comment for community service
 export const createComment = async (comment: any) => {
   const { data, error } = await supabase
     .from('post_comments')
@@ -1948,7 +1760,6 @@ export const createComment = async (comment: any) => {
   return data;
 };
 
-// Get user posts for community service
 export const getUserPosts = async (userId: string, limit = 20, offset = 0) => {
   const { data, error } = await supabase
     .from('community_posts')
@@ -1978,7 +1789,6 @@ export const getUserPosts = async (userId: string, limit = 20, offset = 0) => {
 // REALTIME SUBSCRIPTION FUNCTIONS
 // ============================================
 
-// Subscribe to posts changes
 export const subscribeToPosts = (userId: string, callback: (payload: any) => void) => {
   const subscription = supabase
     .channel('posts_changes')
@@ -1997,7 +1807,6 @@ export const subscribeToPosts = (userId: string, callback: (payload: any) => voi
   return subscription;
 };
 
-// Subscribe to comments changes
 export const subscribeToComments = (postId: string, callback: (payload: any) => void) => {
   const subscription = supabase
     .channel(`comments_${postId}`)
@@ -2016,12 +1825,606 @@ export const subscribeToComments = (postId: string, callback: (payload: any) => 
   return subscription;
 };
 
-// Unsubscribe from channel
 export const unsubscribeFromChannel = (subscription: any) => {
   supabase.removeChannel(subscription);
 };
 
-// Unsubscribe from all channels
 export const unsubscribeFromAll = () => {
   supabase.removeAllChannels();
+};
+
+// ============================================
+// Q&A SYSTEM HELPER FUNCTIONS
+// ============================================
+
+// Get community questions
+export const getCommunityQuestions = async (userId: string, limit = 20, offset = 0, sortBy = 'latest') => {
+  try {
+    // First, get the questions without the votes
+    let query = supabase
+      .from('community_questions')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .neq('user_id', userId) // Exclude user's own questions
+      .range(offset, offset + limit - 1);
+
+    // Apply sorting
+    if (sortBy === 'latest') {
+      query = query.order('created_at', { ascending: false });
+    } else if (sortBy === 'popular') {
+      query = query.order('upvotes', { ascending: false });
+    } else if (sortBy === 'unanswered') {
+      query = query.eq('has_accepted_answer', false).order('created_at', { ascending: false });
+    }
+
+    const { data: questions, error: questionsError } = await query;
+
+    if (questionsError) throw questionsError;
+
+    // If no questions, return empty array
+    if (!questions || questions.length === 0) return [];
+
+    // Get the votes for all these questions in a separate query
+    const questionIds = questions.map(q => q.id);
+    const { data: votes, error: votesError } = await supabase
+      .from('question_votes')
+      .select('*')
+      .in('question_id', questionIds)
+      .eq('user_id', userId);
+
+    if (votesError) throw votesError;
+
+    // Process the votes and add them to the questions
+    const questionsWithVotes = questions.map(question => {
+      const userVote = votes?.find(vote => vote.question_id === question.id);
+      return {
+        ...question,
+        voted_by_user: userVote?.vote_type || null
+      };
+    });
+
+    return questionsWithVotes;
+  } catch (error) {
+    console.error('Error in getCommunityQuestions:', error);
+    throw error;
+  }
+};
+
+// Get a single question with answers
+export const getQuestionWithAnswers = async (questionId: string, userId: string) => {
+  try {
+    // Get the question
+    const { data: question, error: questionError } = await supabase
+      .from('community_questions')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq('id', questionId)
+      .single();
+
+    if (questionError) throw questionError;
+
+    // Increment view count
+    await supabase.rpc('increment_question_views', { question_id: questionId });
+
+    // Get answers for the question
+    const { data: answers, error: answersError } = await supabase
+      .from('question_answers')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq('question_id', questionId)
+      .order('is_accepted', { ascending: false })
+      .order('upvotes', { ascending: false });
+
+    if (answersError) throw answersError;
+
+    // Get votes for the question
+    const { data: questionVotes } = await supabase
+      .from('question_votes')
+      .select('*')
+      .eq('question_id', questionId)
+      .eq('user_id', userId);
+
+    // Get votes for all answers
+    const answerIds = answers?.map(a => a.id) || [];
+    const { data: answerVotes } = await supabase
+      .from('answer_votes')
+      .select('*')
+      .in('answer_id', answerIds)
+      .eq('user_id', userId);
+
+    // Process answer votes
+    const processedAnswers = answers?.map(answer => {
+      const userVote = answerVotes?.find(vote => vote.answer_id === answer.id);
+      return {
+        ...answer,
+        voted_by_user: userVote?.vote_type || null
+      };
+    }) || [];
+
+    return {
+      question: {
+        ...question,
+        voted_by_user: questionVotes?.[0]?.vote_type || null
+      },
+      answers: processedAnswers
+    };
+  } catch (error) {
+    console.error('Error in getQuestionWithAnswers:', error);
+    throw error;
+  }
+};
+
+export const createQuestion = async (question: any) => {
+  const { data, error } = await supabase
+    .from('community_questions')
+    .insert({
+      ...question,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.rpc('award_xp', {
+    user_uuid: question.user_id,
+    xp_amount: 10,
+    source: 'question_asked',
+    source_id: data.id
+  });
+
+  return data;
+};
+
+export const updateQuestion = async (questionId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('community_questions')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', questionId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const deleteQuestion = async (questionId: string) => {
+  const { error } = await supabase
+    .from('community_questions')
+    .delete()
+    .eq('id', questionId);
+
+  if (error) throw error;
+  return true;
+};
+
+// Create a comment on a question
+export const createQuestionComment = async (comment: any) => {
+  try {
+    const { data, error } = await supabase
+      .from('question_comments')
+      .insert({
+        ...comment,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error in createQuestionComment:', error);
+    throw error;
+  }
+};
+
+// Vote on a question
+export const voteOnQuestion = async (questionId: string, userId: string, voteType: 'up' | 'down') => {
+  try {
+    // Check if user already voted
+    const { data: existingVote, error: fetchError } = await supabase
+      .from('question_votes')
+      .select('*')
+      .eq('question_id', questionId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+    if (existingVote) {
+      if (existingVote.vote_type === voteType) {
+        // User is removing their vote
+        const { error } = await supabase
+          .from('question_votes')
+          .delete()
+          .eq('question_id', questionId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+        return null;
+      } else {
+        // User is changing their vote
+        const { error } = await supabase
+          .from('question_votes')
+          .update({ voteType })
+          .eq('question_id', questionId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+        return voteType;
+      }
+    } else {
+      // User is voting for the first time
+      const { error } = await supabase
+        .from('question_votes')
+        .insert({
+          question_id: questionId,
+          user_id: userId,
+          vote_type: voteType
+        });
+
+      if (error) throw error;
+      return voteType;
+    }
+  } catch (error) {
+    console.error('Error in voteOnQuestion:', error);
+    throw error;
+  }
+};
+
+export const createAnswer = async (answer: any) => {
+  const { data, error } = await supabase
+    .from('question_answers')
+    .insert({
+      ...answer,
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.rpc('award_xp', {
+    user_uuid: answer.user_id,
+    xp_amount: 15,
+    source: 'answer_given',
+    source_id: data.id
+  });
+
+  return data;
+};
+
+export const updateAnswer = async (answerId: string, updates: any) => {
+  const { data, error } = await supabase
+    .from('question_answers')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', answerId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const deleteAnswer = async (answerId: string) => {
+  const { error } = await supabase
+    .from('question_answers')
+    .delete()
+    .eq('id', answerId);
+
+  if (error) throw error;
+  return true;
+};
+
+// Vote on an answer
+export const voteOnAnswer = async (answerId: string, userId: string, voteType: 'up' | 'down') => {
+  try {
+    // Check if user already voted
+    const { data: existingVote, error: fetchError } = await supabase
+      .from('answer_votes')
+      .select('*')
+      .eq('answer_id', answerId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+    if (existingVote) {
+      if (existingVote.vote_type === voteType) {
+        // User is removing their vote
+        const { error } = await supabase
+          .from('answer_votes')
+          .delete()
+          .eq('answer_id', answerId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+        return null;
+      } else {
+        // User is changing their vote
+        const { error } = await supabase
+          .from('answer_votes')
+          .update({ voteType })
+          .eq('answer_id', answerId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+        return voteType;
+      }
+    } else {
+      // User is voting for the first time
+      const { error } = await supabase
+        .from('answer_votes')
+        .insert({
+          answer_id: answerId,
+          user_id: userId,
+          vote_type: voteType
+        });
+
+      if (error) throw error;
+      return voteType;
+    }
+  } catch (error) {
+    console.error('Error in voteOnAnswer:', error);
+    throw error;
+  }
+};
+
+export const acceptAnswer = async (answerId: string, questionId: string, userId: string) => {
+  const { data: question } = await supabase
+    .from('community_questions')
+    .select('user_id')
+    .eq('id', questionId)
+    .single();
+
+  if (!question || question.user_id !== userId) {
+    throw new Error('You can only accept answers for your own questions');
+  }
+
+  await supabase
+    .from('question_answers')
+    .update({ is_accepted: false })
+    .eq('question_id', questionId)
+    .neq('id', answerId);
+
+  const { data, error } = await supabase
+    .from('question_answers')
+    .update({ is_accepted: true })
+    .eq('id', answerId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase
+    .from('community_questions')
+    .update({ has_accepted_answer: true })
+    .eq('id', questionId);
+
+  return data;
+};
+
+// ============================================
+// ACHIEVEMENTS & LEADERBOARD HELPER FUNCTIONS
+// ============================================
+
+// Get user XP
+export const getUserXP = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_xp')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    
+    // If no record exists, create one
+    if (!data) {
+      const { data: newXp, error: insertError } = await supabase.rpc('award_xp', { 
+        user_uuid: userId, 
+        xp_amount: 0, 
+        source: 'initial_setup', 
+        source_id: null 
+      });
+      
+      if (insertError) {
+        // If the function doesn't work, try a direct insert
+        const { data: directXp, error: directError } = await supabase
+          .from('user_xp')
+          .insert({
+            user_id: userId,
+            xp_points: 0,
+            level: 1
+          })
+          .select()
+          .single();
+        
+        if (directError) throw directError;
+        return directXp;
+      }
+      
+      // Get the newly created record
+      const { data: createdXp, error: fetchError } = await supabase
+        .from('user_xp')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      return createdXp;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error in getUserXP:', error);
+    // Return a default XP object if everything fails
+    return {
+      id: '',
+      user_id: userId,
+      xp_points: 0,
+      level: 1,
+      updated_at: new Date().toISOString()
+    };
+  }
+};
+
+export const getUserAchievements = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('user_achievements')
+    .select('*')
+    .eq('user_id', userId)
+    .order('unlocked_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+};
+
+export const unlockAchievement = async (userId: string, achievementId: string, achievementName: string, achievementDescription: string, achievementIcon: string) => {
+  const { data: existing } = await supabase
+    .from('user_achievements')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('achievement_id', achievementId)
+    .single();
+
+  if (existing) return existing;
+
+  const { data, error } = await supabase
+    .from('user_achievements')
+    .insert({
+      user_id: userId,
+      achievement_id: achievementId,
+      achievement_name: achievementName,
+      achievement_description: achievementDescription,
+      achievement_icon: achievementIcon
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase.rpc('award_xp', {
+    user_uuid: userId,
+    xp_amount: 25,
+    source: 'achievement_unlocked',
+    source_id: data.id
+  });
+
+  return data;
+};
+
+// Get leaderboard
+export const getLeaderboard = async (limit = 50) => {
+  try {
+    // First, update the leaderboard
+    await supabase.rpc('update_weekly_leaderboard');
+    
+    // Then get the data
+    const { data, error } = await supabase
+      .from('weekly_leaderboard')
+      .select('*')
+      .eq('week_start', new Date(new Date().setDate(new Date().getDate() - new Date().getDay())).toISOString().split('T')[0]) // Get current week's start date
+      .order('xp_points', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error in getLeaderboard:', error);
+    // Fallback to a simple query if the function doesn't work
+    try {
+      const { data, error: fallbackError } = await supabase
+        .from('profiles')
+        .select(`
+          id as user_id,
+          full_name,
+          avatar_url,
+          user_xp!inner (
+            xp_points,
+            level
+          )
+        `)
+        .order('user_xp(xp_points)', { ascending: false })
+        .limit(limit);
+
+      if (fallbackError) throw fallbackError;
+      
+      // Transform the data to match the expected format
+      return data.map((item: any) => ({
+        user_id: item.user_id,
+        full_name: item.full_name,
+        avatar_url: item.avatar_url,
+        xp_points: item.user_xp.xp_points,
+        level: item.user_xp.level,
+        answers_given: 0,
+        questions_asked: 0,
+        accepted_answers: 0
+      }));
+    } catch (fallbackError) {
+      console.error('Error in fallback leaderboard query:', fallbackError);
+      return [];
+    }
+  }
+};
+
+// Get user's rank on leaderboard
+export const getUserLeaderboardRank = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .rpc('get_user_leaderboard_rank', { user_uuid: userId });
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error in getUserLeaderboardRank:', error);
+    // Fallback to a simple calculation
+    try {
+      const { data: allUsers } = await supabase
+        .from('user_xp')
+        .select('user_id, xp_points')
+        .order('xp_points', { ascending: false });
+
+      if (!allUsers) return null;
+      
+      const userIndex = allUsers.findIndex(user => user.user_id === userId);
+      return userIndex >= 0 ? userIndex + 1 : null;
+    } catch (fallbackError) {
+      console.error('Error in fallback rank calculation:', fallbackError);
+      return null;
+    }
+  }
+};
+
+export const getXPTransactions = async (userId: string, limit = 20) => {
+  const { data, error } = await supabase
+    .from('xp_transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data;
 };

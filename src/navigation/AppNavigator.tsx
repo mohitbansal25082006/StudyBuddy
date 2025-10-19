@@ -41,6 +41,15 @@ import { BookmarksScreen } from '../screens/community/BookmarksScreen';
 import { ImageViewer } from '../components/community/ImageViewer';
 import { ReportContentScreen } from '../screens/community/ReportContentScreen';
 
+// Q&A Screens
+import { QAScreen } from '../screens/qa/QAScreen';
+import { AskQuestionScreen } from '../screens/qa/AskQuestionScreen';
+import { QuestionDetailScreen } from '../screens/qa/QuestionDetailScreen';
+
+// Achievement Screens
+import { LeaderboardScreen } from '../screens/achievements/LeaderboardScreen';
+import { AchievementsScreen } from '../screens/achievements/AchievementsScreen';
+
 // Types & Store
 import { AppStackParamList } from '../types';
 import { useAuthStore } from '../store/authStore';
@@ -103,6 +112,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
     const iconMap: { [key: string]: string } = {
       'Home': '🏠',
       'Community': '👥',
+      'QAScreen': '❓',
       'Subjects': '📖',
       'StudyPlan': '📚',
       'Flashcards': '🗂️',
@@ -117,6 +127,7 @@ const TabIcon: React.FC<TabIconProps> = ({ name, focused }) => {
     const labelMap: { [key: string]: string } = {
       'Home': 'Home',
       'Community': 'Community',
+      'QAScreen': 'Q&A',
       'Subjects': 'Subjects',
       'StudyPlan': 'Plan',
       'Flashcards': 'Cards',
@@ -199,6 +210,13 @@ const TabNavigator: React.FC = () => {
         component={CommunityScreen}
         options={{
           title: 'Community',
+        }}
+      />
+      <Tab.Screen 
+        name="QAScreen" 
+        component={QAScreen}
+        options={{
+          title: 'Q&A',
         }}
       />
       <Tab.Screen 
@@ -349,6 +367,38 @@ export const AppNavigator: React.FC = () => {
         }}
       />
       
+      {/* Q&A Screens */}
+      <Stack.Screen 
+        name="AskQuestionScreen" 
+        component={AskQuestionScreen} 
+        options={{
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen 
+        name="QuestionDetailScreen" 
+        component={QuestionDetailScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      
+      {/* Achievement Screens */}
+      <Stack.Screen 
+        name="LeaderboardScreen" 
+        component={LeaderboardScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      <Stack.Screen 
+        name="AchievementsScreen" 
+        component={AchievementsScreen} 
+        options={{
+          presentation: 'card',
+        }}
+      />
+      
       {/* Study Plan Screens */}
       <Stack.Screen 
         name="StudyPlanDetail" 
@@ -368,13 +418,6 @@ export const AppNavigator: React.FC = () => {
       />
       
       {/* Calendar Screens */}
-      <Stack.Screen 
-        name="Calendar" 
-        component={CalendarScreen} 
-        options={{
-          presentation: 'card',
-        }}
-      />
       <Stack.Screen 
         name="AddEvent" 
         component={AddEventScreen} 

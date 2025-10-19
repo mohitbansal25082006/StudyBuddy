@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -24,6 +25,8 @@ import { SearchBar } from '../../components/community/SearchBar';
 import { TagFilter } from '../../components/community/TagFilter';
 import { EmptyState } from '../../components/community/EmptyState';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 // Define navigation prop type using the existing AppStackParamList
 type CommunityScreenNavigationProp = StackNavigationProp<AppStackParamList, 'Community'>;
@@ -183,8 +186,9 @@ export const CommunityScreen: React.FC = () => {
         if (reset) {
           setPosts(postsWithBookmarkStatus);
         } else {
-          // Use functional update to append to existing posts
-          setPosts((prevPosts: CommunityPost[]) => [...prevPosts, ...postsWithBookmarkStatus]);
+          // Append to existing posts
+          const updatedPosts = [...posts, ...postsWithBookmarkStatus];
+          setPosts(updatedPosts);
         }
 
         setHasMore(newPosts.length === 20);
@@ -198,7 +202,7 @@ export const CommunityScreen: React.FC = () => {
         setRefreshing(false);
       }
     },
-    [user, setPosts, setLoading, setError, bookmarkedPostIds, applyBookmarkStatus]
+    [user, posts, setPosts, setLoading, setError, bookmarkedPostIds, applyBookmarkStatus]
   );
 
   // Toggle between posts and bookmarks view
@@ -233,7 +237,8 @@ export const CommunityScreen: React.FC = () => {
               // Apply bookmark status
               const postWithBookmarkStatus = applyBookmarkStatus([fullPosts[0]], bookmarkedPostIds)[0];
               
-              setPosts((prevPosts: CommunityPost[]) => [postWithBookmarkStatus, ...prevPosts]);
+              const updatedPosts = [postWithBookmarkStatus, ...posts];
+              setPosts(updatedPosts);
             }
           }
         } catch (error) {
@@ -241,28 +246,26 @@ export const CommunityScreen: React.FC = () => {
         }
       } else if (eventType === 'UPDATE') {
         // Post updated
-        setPosts((prevPosts: CommunityPost[]) => 
-          prevPosts.map(post => 
-            post.id === newRecord.id 
-              ? { 
-                  ...post, 
-                  title: newRecord.title || post.title,
-                  content: newRecord.content || post.content,
-                  image_url: newRecord.image_url || post.image_url,
-                  tags: newRecord.tags || post.tags,
-                  likes: newRecord.likes_count || post.likes,
-                  comments: newRecord.comments_count || post.comments,
-                  updated_at: newRecord.updated_at || post.updated_at,
-                  bookmarked_by_user: bookmarkedPostIds.has(post.id)
-                } 
-              : post
-          )
+        const updatedPosts = posts.map(post => 
+          post.id === newRecord.id 
+            ? { 
+                ...post, 
+                title: newRecord.title || post.title,
+                content: newRecord.content || post.content,
+                image_url: newRecord.image_url || post.image_url,
+                tags: newRecord.tags || post.tags,
+                likes: newRecord.likes_count || post.likes,
+                comments: newRecord.comments_count || post.comments,
+                updated_at: newRecord.updated_at || post.updated_at,
+                bookmarked_by_user: bookmarkedPostIds.has(post.id)
+              } 
+            : post
         );
+        setPosts(updatedPosts);
       } else if (eventType === 'DELETE') {
         // Post deleted
-        setPosts((prevPosts: CommunityPost[]) => 
-          prevPosts.filter(post => post.id !== oldRecord.id)
-        );
+        const updatedPosts = posts.filter(post => post.id !== oldRecord.id);
+        setPosts(updatedPosts);
       }
     };
 
@@ -275,7 +278,7 @@ export const CommunityScreen: React.FC = () => {
       unsubscribeFromPosts();
       setSubscriptionActive(false);
     };
-  }, [user, setPosts, setSubscriptionActive, bookmarkedPostIds, applyBookmarkStatus, posts]);
+  }, [user, posts, setPosts, setSubscriptionActive, bookmarkedPostIds, applyBookmarkStatus]);
 
   // Initial load on mount - load bookmarks first, then posts
   useEffect(() => {
@@ -303,7 +306,8 @@ export const CommunityScreen: React.FC = () => {
   // Update posts with bookmark status whenever bookmarkedPostIds changes
   useEffect(() => {
     if (bookmarksLoadedRef.current && posts.length > 0) {
-      setPosts((prevPosts) => applyBookmarkStatus(prevPosts, bookmarkedPostIds));
+      const updatedPosts = applyBookmarkStatus(posts, bookmarkedPostIds);
+      setPosts(updatedPosts);
     }
   }, [bookmarkedPostIds, applyBookmarkStatus, setPosts]);
 
@@ -441,11 +445,12 @@ export const CommunityScreen: React.FC = () => {
           posts.map(p => p.id === post.id ? { ...p, bookmarked_by_user: isBookmarked } : p);
         
         // Update in main posts
-        setPosts(updatePostBookmarkStatus);
+        const updatedMainPosts = updatePostBookmarkStatus(posts);
+        setPosts(updatedMainPosts);
         
         // Update in search results if searching
         if (isSearching) {
-          setSearchResults(updatePostBookmarkStatus);
+          setSearchResults(updatePostBookmarkStatus(searchResults));
         }
         
         // If we're showing bookmarks, refresh the bookmarks list
@@ -457,7 +462,7 @@ export const CommunityScreen: React.FC = () => {
         Alert.alert('Error', 'Failed to bookmark post. Please try again.');
       }
     },
-    [user, setPosts, showBookmarks, loadBookmarks, isSearching, setSearchResults]
+    [user, posts, setPosts, showBookmarks, loadBookmarks, isSearching, searchResults]
   );
 
   // Handle report
@@ -566,12 +571,60 @@ export const CommunityScreen: React.FC = () => {
           </TouchableOpacity>
 
           <TouchableOpacity
+            onPress={() => navigation.navigate('QAScreen')}
+            style={styles.headerButton}
+          >
+            <Ionicons name="help-circle-outline" size={24} color="#6B7280" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('LeaderboardScreen')}
+            style={styles.headerButton}
+          >
+            <Ionicons name="trophy-outline" size={24} color="#6B7280" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AchievementsScreen')}
+            style={styles.headerButton}
+          >
+            <Ionicons name="ribbon-outline" size={24} color="#6B7280" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => navigation.navigate('CommunityGuidelines')}
             style={styles.headerButton}
           >
             <Ionicons name="information-circle-outline" size={24} color="#6B7280" />
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => navigation.navigate('QAScreen')}
+        >
+          <Ionicons name="help-circle" size={24} color="#6366F1" />
+          <Text style={styles.quickActionText}>Q&A</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => navigation.navigate('LeaderboardScreen')}
+        >
+          <Ionicons name="trophy" size={24} color="#6366F1" />
+          <Text style={styles.quickActionText}>Leaderboard</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.quickActionButton}
+          onPress={() => navigation.navigate('AchievementsScreen')}
+        >
+          <Ionicons name="ribbon" size={24} color="#6366F1" />
+          <Text style={styles.quickActionText}>Achievements</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar - only show when not in bookmarks view */}
@@ -705,6 +758,31 @@ const styles = StyleSheet.create({
   activeHeaderButton: {
     backgroundColor: '#EBF5FF',
     borderRadius: 16,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  quickActionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6366F1',
+    marginTop: 4,
   },
   realtimeIndicator: {
     flexDirection: 'row',

@@ -403,6 +403,101 @@ export interface Comment {
   updated_at: string;
 }
 
+// Q&A System Types
+export interface CommunityQuestion {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  title: string;
+  content: string;
+  tags: string[];
+  difficulty_level: 'easy' | 'medium' | 'hard';
+  views: number;
+  downvotes: number;
+  upvotes: number;
+  has_accepted_answer: boolean;
+  voted_by_user: 'up' | 'down' | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionAnswer {
+  id: string;
+  question_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  content: string;
+  downvotes: number;
+  upvotes: number;
+  is_accepted: boolean;
+  voted_by_user: 'up' | 'down' | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionComment {
+  id: string;
+  question_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnswerComment {
+  id: string;
+  answer_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Achievement System Types
+export interface UserAchievement {
+  id: string;
+  user_id: string;
+  achievement_id: string;
+  achievement_name: string;
+  achievement_description: string;
+  achievement_icon: string;
+  unlocked_at: string;
+}
+
+export interface UserXP {
+  id: string;
+  user_id: string;
+  xp_points: number;
+  level: number;
+  updated_at: string;
+}
+
+export interface XPTransaction {
+  id: string;
+  user_id: string;
+  xp_amount: number;
+  source: string;
+  source_id: string | null;
+  created_at: string;
+}
+
+export interface LeaderboardEntry {
+  user_id: string;
+  full_name: string;
+  avatar_url: string | null;
+  xp_points: number;
+  level: number;
+  answers_given: number;
+  questions_asked: number;
+  accepted_answers: number;
+}
+
 // Props for navigation screens
 export type AuthStackParamList = {
   Splash: undefined;
@@ -447,4 +542,11 @@ export type AppStackParamList = {
     contentId: string;
     contentAuthorId: string;
   };
+  // Q&A screens
+  QAScreen: undefined;
+  AskQuestionScreen: undefined;
+  QuestionDetailScreen: { questionId: string };
+  // Achievement screens
+  LeaderboardScreen: undefined;
+  AchievementsScreen: undefined;
 };
