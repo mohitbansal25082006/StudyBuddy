@@ -54,6 +54,7 @@ interface BookmarkWithPost extends PostBookmark {
       id: string;
       image_url: string;
       image_order: number;
+      created_at?: string;
     }>;
     post_likes?: any[];
   };
@@ -108,7 +109,10 @@ export const ProfileEditScreen = ({ navigation }: any) => {
     
     try {
       setLoadingBookmarks(true);
-      const userBookmarks = await getUserBookmarks(user.id, 5, 0);
+      const userBookmarksRaw = await getUserBookmarks(user.id, 5, 0);
+      
+      // Safely cast to unknown first, then to BookmarkWithPost[]
+      const userBookmarks = userBookmarksRaw as unknown as BookmarkWithPost[];
       
       // Extract post data from bookmarks with proper error handling
       const bookmarkedPosts = userBookmarks.map((bookmark: BookmarkWithPost) => {
@@ -126,7 +130,7 @@ export const ProfileEditScreen = ({ navigation }: any) => {
           post_id: post.id,
           image_url: img.image_url,
           image_order: img.image_order,
-          created_at: new Date().toISOString(), // Use current time as fallback
+          created_at: img.created_at || new Date().toISOString(), // Use provided created_at or fallback to current time
         }));
         
         return {

@@ -131,7 +131,11 @@ export const CommunityScreen: React.FC = () => {
     
     try {
       const userBookmarks = await getUserBookmarks(user.id);
-      const convertedPosts = (userBookmarks as BookmarkData[])
+      // Safely cast to unknown first, then to BookmarkData[]
+      const bookmarks = userBookmarks as unknown as BookmarkData[];
+      
+      // Validate and convert bookmarks
+      const convertedPosts = bookmarks
         .map(convertBookmarkToPost)
         .filter((post): post is CommunityPost => post !== null);
       
@@ -294,14 +298,14 @@ export const CommunityScreen: React.FC = () => {
     };
     
     initializeData();
-  }, [user]); // Only depend on user
+  }, [user, loadBookmarks, loadPosts]);
 
   // Update posts with bookmark status whenever bookmarkedPostIds changes
   useEffect(() => {
     if (bookmarksLoadedRef.current && posts.length > 0) {
       setPosts((prevPosts) => applyBookmarkStatus(prevPosts, bookmarkedPostIds));
     }
-  }, [bookmarkedPostIds]); // Only re-run when bookmarkedPostIds changes
+  }, [bookmarkedPostIds, applyBookmarkStatus, setPosts]);
 
   // Reload on focus (if needed)
   useFocusEffect(
@@ -317,7 +321,7 @@ export const CommunityScreen: React.FC = () => {
         };
         refreshData();
       }
-    }, [user]) // Simplified dependencies
+    }, [user, loadBookmarks, loadPosts])
   );
 
   // Refresh handler
@@ -453,7 +457,7 @@ export const CommunityScreen: React.FC = () => {
         Alert.alert('Error', 'Failed to bookmark post. Please try again.');
       }
     },
-    [user, setPosts, showBookmarks, loadBookmarks, isSearching]
+    [user, setPosts, showBookmarks, loadBookmarks, isSearching, setSearchResults]
   );
 
   // Handle report
