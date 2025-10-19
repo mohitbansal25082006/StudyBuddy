@@ -1,16 +1,13 @@
 // F:\StudyBuddy\src\screens\achievements\AchievementsScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   RefreshControl,
-  ActivityIndicator,
   StyleSheet,
-  Image,
   TouchableOpacity,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuthStore } from '../../store/authStore';
@@ -36,45 +33,46 @@ export const AchievementsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [recommendedAchievements, setRecommendedAchievements] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Load achievements data
-  const loadAchievementsData = useCallback(async () => {
+  const loadAchievementsData = useCallback(async (isRefresh = false) => {
     if (!user) return;
 
-    try {
+    // Don't show loading spinner on refresh
+    if (!isRefresh) {
       setLoadingAchievements(true);
+    }
+
+    try {
       setError(null);
       
-      // Get user achievements
-      try {
-        const achievementsData = await getUserAchievements(user.id);
-        setUserAchievements(achievementsData);
-      } catch (achievementsError) {
-        console.error('Error getting achievements:', achievementsError);
-        // Continue without achievements
+      // Parallel data fetching for better performance
+      const [achievementsData, xpData, transactionsData] = await Promise.allSettled([
+        getUserAchievements(user.id),
+        getUserXP(user.id),
+        getXPTransactions(user.id, 10),
+      ]);
+
+      // Handle achievements
+      if (achievementsData.status === 'fulfilled') {
+        setUserAchievements(achievementsData.value);
       }
       
-      // Get user XP
-      let xpData = null;
-      try {
-        xpData = await getUserXP(user.id);
-        setUserXP(xpData);
-      } catch (xpError) {
-        console.error('Error getting user XP:', xpError);
-        // Continue without XP
+      // Handle XP
+      let fetchedXP = null;
+      if (xpData.status === 'fulfilled') {
+        fetchedXP = xpData.value;
+        setUserXP(fetchedXP);
       }
       
-      // Get XP transactions
-      try {
-        const transactionsData = await getXPTransactions(user.id, 10);
-        setXPTransactions(transactionsData);
-      } catch (transactionsError) {
-        console.error('Error getting XP transactions:', transactionsError);
-        // Continue without transactions
+      // Handle transactions
+      if (transactionsData.status === 'fulfilled') {
+        setXPTransactions(transactionsData.value);
       }
       
-      // Get recommended achievements
-      if (xpData) {
+      // Get recommended achievements only if we have XP data
+      if (fetchedXP && !isRefresh) {
         try {
           const userProfile = {
             full_name: user.email?.split('@')[0] || 'User',
@@ -82,15 +80,15 @@ export const AchievementsScreen: React.FC = () => {
             subjects: [],
           };
           
-          const recommendations = await recommendAchievements(userProfile, xpData.xp_points);
+          const recommendations = await recommendAchievements(userProfile, fetchedXP.xp_points);
           setRecommendedAchievements(recommendations);
-        } catch (recommendationsError) {
-          console.error('Error getting recommendations:', recommendationsError);
-          // Continue without recommendations
+        } catch (error) {
+          // Silently fail on recommendations
         }
       }
+      
+      setIsInitialized(true);
     } catch (error: any) {
-      console.error('Error loading achievements:', error);
       setError(error.message || 'Failed to load achievements');
     } finally {
       setLoadingAchievements(false);
@@ -100,18 +98,20 @@ export const AchievementsScreen: React.FC = () => {
 
   // Initial load
   useEffect(() => {
-    loadAchievementsData();
-  }, [loadAchievementsData]);
+    if (!isInitialized) {
+      loadAchievementsData(false);
+    }
+  }, [isInitialized]);
 
   // Refresh handler
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    loadAchievementsData();
+    loadAchievementsData(true);
   }, [loadAchievementsData]);
 
-  // Render achievement item
-  const renderAchievement = useCallback(
-    (item: UserAchievement, index: number) => (
+  // Memoized achievement items
+  const achievementItems = useMemo(() => {
+    return userAchievements.map((item) => (
       <View key={item.id} style={styles.achievementItem}>
         <View style={styles.achievementIconContainer}>
           <Text style={styles.achievementIcon}>{item.achievement_icon}</Text>
@@ -129,13 +129,12 @@ export const AchievementsScreen: React.FC = () => {
           <Ionicons name="checkmark" size={16} color="#FFFFFF" />
         </View>
       </View>
-    ),
-    []
-  );
+    ));
+  }, [userAchievements]);
 
-  // Render recommended achievement
-  const renderRecommendedAchievement = useCallback(
-    (item: any, index: number) => (
+  // Memoized recommended achievements
+  const recommendedItems = useMemo(() => {
+    return recommendedAchievements.map((item, index) => (
       <View key={index} style={styles.recommendedAchievement}>
         <View style={styles.recommendedAchievementIconContainer}>
           <Text style={styles.recommendedAchievementIcon}>{item.icon}</Text>
@@ -150,21 +149,16 @@ export const AchievementsScreen: React.FC = () => {
           <Ionicons name="lock-closed" size={16} color="#6B7280" />
         </View>
       </View>
-    ),
-    []
-  );
+    ));
+  }, [recommendedAchievements]);
 
-  // Render XP transaction
-  const renderXPTransaction = useCallback(
-    (item: XPTransaction, index: number) => (
+  // Memoized XP transactions
+  const transactionItems = useMemo(() => {
+    return xpTransactions.map((item) => (
       <View key={item.id} style={styles.xpTransaction}>
         <View style={styles.xpTransactionIcon}>
           <Ionicons 
-            name={
-              item.xp_amount > 0 
-                ? "add-circle" 
-                : "remove-circle"
-            } 
+            name={item.xp_amount > 0 ? "add-circle" : "remove-circle"} 
             size={20} 
             color={item.xp_amount > 0 ? "#10B981" : "#EF4444"} 
           />
@@ -186,31 +180,17 @@ export const AchievementsScreen: React.FC = () => {
           {item.xp_amount > 0 ? '+' : ''}{item.xp_amount} XP
         </Text>
       </View>
-    ),
-    []
-  );
+    ));
+  }, [xpTransactions]);
 
-  // Render error state
-  const renderError = () => {
-    if (!error) return null;
-    
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={64} color="#EF4444" />
-        <Text style={styles.errorTitle}>Something went wrong</Text>
-        <Text style={styles.errorMessage}>{error}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={loadAchievementsData}
-        >
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  // Calculate progress percentage
+  const progressPercentage = useMemo(() => {
+    if (!userXP) return 0;
+    return Math.min(100, (userXP.xp_points % 100));
+  }, [userXP]);
 
-  // Show initial loading
-  if (loadingAchievements && userAchievements.length === 0) {
+  // Show initial loading only if not initialized and no data
+  if (!isInitialized && loadingAchievements) {
     return <LoadingSpinner />;
   }
 
@@ -235,10 +215,7 @@ export const AchievementsScreen: React.FC = () => {
             <Text style={styles.xpAmount}>{userXP.xp_points} XP</Text>
             <View style={styles.xpProgressBar}>
               <View 
-                style={[
-                  styles.xpProgressFill, 
-                  { width: `${Math.min(100, (userXP.xp_points % 100))}%` }
-                ]} 
+                style={[styles.xpProgressFill, { width: `${progressPercentage}%` }]} 
               />
             </View>
             <Text style={styles.xpProgressText}>
@@ -248,9 +225,19 @@ export const AchievementsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Error or Achievements */}
+      {/* Error State */}
       {error ? (
-        renderError()
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={64} color="#EF4444" />
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => loadAchievementsData(false)}
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView
           style={styles.content}
@@ -265,7 +252,7 @@ export const AchievementsScreen: React.FC = () => {
             />
           }
         >
-          {/* Achievements */}
+          {/* Achievements Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
               Unlocked Achievements ({userAchievements.length})
@@ -284,16 +271,16 @@ export const AchievementsScreen: React.FC = () => {
                 {recommendedAchievements.length > 0 && (
                   <View style={styles.recommendedSection}>
                     <Text style={styles.sectionTitle}>Recommended Achievements</Text>
-                    {recommendedAchievements.map(renderRecommendedAchievement)}
+                    {recommendedItems}
                   </View>
                 )}
                 
-                {userAchievements.map(renderAchievement)}
+                {achievementItems}
               </>
             )}
           </View>
 
-          {/* XP Transactions */}
+          {/* XP Transactions Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
             
@@ -302,7 +289,7 @@ export const AchievementsScreen: React.FC = () => {
                 <Text style={styles.emptySubtitle}>No recent activity</Text>
               </View>
             ) : (
-              xpTransactions.map(renderXPTransaction)
+              transactionItems
             )}
           </View>
         </ScrollView>
