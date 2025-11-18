@@ -8,7 +8,6 @@
 [![Expo](https://img.shields.io/badge/Expo-51-black)](https://expo.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-1.0-green)](https://supabase.com/)
-[![OpenAI](https://img.shields.io/badge/OpenAI-API-4.0-green)](https://openai.com/)
 
 </div>
 
@@ -227,7 +226,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you have any questions, suggestions, or feedback, please feel free to:
 
 - Open an issue on GitHub
-- Email us at mohitbansal25082006@gmail.com.com
+- Email us at mohitbansal25082006@gmail.com
 
 ---
 
