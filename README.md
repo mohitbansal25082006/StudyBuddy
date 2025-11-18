@@ -4,15 +4,11 @@
 
 <div align="center">
 
-![StudyBuddy Logo](https://via.placeholder.com/400x200/6366F1/FFFFFF?text=StudyBuddy+Logo)
-
 [![React Native](https://img.shields.io/badge/React%20Native-0.73-blue)](https://reactnative.dev/)
 [![Expo](https://img.shields.io/badge/Expo-51-black)](https://expo.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-1.0-green)](https://supabase.com/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-API-4.0-green)](https://openai.com/)
-
-[📱 Download App](https://expo.dev) | [👀 Demo](https://youtube.com) | [📖 Documentation](https://github.com/yourusername/StudyBuddy/wiki)
 
 </div>
 
@@ -44,7 +40,6 @@ To empower students with intelligent study tools that adapt to their unique lear
 ### 🤝 Community Features
 - **Community Feed**: Share educational content and learn from others
 - **Q&A System**: Ask questions and get answers from the community
-- **Collaborative Study Rooms**: Real-time collaboration with other students
 - **Bookmark System**: Save useful posts and content for later
 
 ### 📅 Calendar Integration
@@ -83,17 +78,6 @@ To empower students with intelligent study tools that adapt to their unique lear
 
 ---
 
-## 📱 Screenshots
-
-<div align="center">
-  <img src="https://via.placeholder.com/300x600/6366F1/FFFFFF?text=Home+Screen" alt="Home Screen" width="200"/>
-  <img src="https://via.placeholder.com/300x600/6366F1/FFFFFF?text=Study+Plan" alt="Study Plan" width="200"/>
-  <img src="https://via.placeholder.com/300x600/6366F1/FFFFFF?text=Flashcards" alt="Flashcards" width="200"/>
-  <img src="https://via.placeholder.com/300x600/6366F1/FFFFFF?text=Community" alt="Community" width="200"/>
-</div>
-
----
-
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -107,7 +91,7 @@ To empower students with intelligent study tools that adapt to their unique lear
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/StudyBuddy.git
+   git clone https://github.com/mohitbansal25082006/StudyBuddy.git
    cd StudyBuddy
    ```
 
@@ -243,8 +227,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you have any questions, suggestions, or feedback, please feel free to:
 
 - Open an issue on GitHub
-- Email us at studybuddy@example.com
-- Follow us on Twitter [@StudyBuddyApp](https://twitter.com/StudyBuddyApp)
+- Email us at mohitbansal25082006@gmail.com.com
 
 ---
 
